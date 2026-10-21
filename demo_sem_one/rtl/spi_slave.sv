@@ -1,254 +1,168 @@
 module spi_slave (
-    input logic clk_50,
-    input logic rst_n,
-    input logic lab_clk,
-
-    input logic [43:0] probes,
-
-    input logic spi_clk,
-    input logic spi_cs_n,
-    input logic spi_mosi,
-
-    output logic spi_miso,
-    output logic data_ready
+    input  logic        clk_50,
+    input  logic        rst_n,
+    input  logic        lab_clk,
+    input  logic [43:0] probes,
+    input  logic        spi_clk,
+    input  logic        spi_cs_n,
+    input  logic        spi_mosi, // reserved; read-only SPI protocol
+    output logic        spi_miso,
+    output logic        data_ready
 );
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    typedef enum logic [1:0] {
-        idle, wait_settle, ready, transfer
-    } state_type;
+    // Fixed 128-byte frame: A5, version 01, sample counter LE,
+    // 14 records (ID, bit-width, packed value), zero padding, XOR at byte 127.
+    localparam int FRAME_BYTES = 128;
+    localparam int NUM_SIGNALS = 14;
+    localparam int RECORD_END  = 46; // first byte after 42 record bytes
+    localparam int SETTLE_CYCLES = 4;
 
-    state_type current_state;
-    state_type next_state;
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
+    typedef enum logic [1:0] {IDLE, SETTLE, READY, TRANSFER} state_t;
+    state_t state;
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    logic [7:0] checksum;
-    logic [7:0] tx_byte;
-    logic [7:0] next_tx_byte;
+    logic [2:0] lab_sync, sck_sync, cs_sync;
+    wire lab_rise =  lab_sync[1] & ~lab_sync[2];
+    wire sck_rise =  sck_sync[1] & ~sck_sync[2];
+    wire sck_fall = ~sck_sync[1] &  sck_sync[2];
+    wire cs_rise  =  cs_sync[1]  & ~cs_sync[2];
+    wire cs_fall  = ~cs_sync[1]  &  cs_sync[2];
 
-    logic [15:0] cycle_count;
     logic [2:0] settle_count;
-    logic [43:0] debug_data;
-
+    logic [15:0] sample_count;
+    logic [43:0] sample_probes;
+    logic [7:0] frame [0:FRAME_BYTES-1];
     logic [6:0] byte_index;
     logic [2:0] bit_index;
-    logic frame_complete_flag;
+    logic [10:0] bits_sampled; // 0..1024
 
-    logic [2:0] lab_clk_sync;
-    logic [2:0] spi_clk_sync;
-    logic [2:0] spi_cs_n_sync;
-
-    logic lab_clock_rising_flag;
-    logic spi_clk_rising_flag;
-    logic spi_clk_falling_flag;
-    logic spi_cs_n_rising_flag;
-    logic spi_cs_n_falling_flag;
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    // Synchronize asynchronous inputs to the 50 MHz clock
-    always_ff @(posedge clk_50 or negedge rst_n) begin
-        if (!rst_n) begin
-            lab_clk_sync <= '0;
-            spi_clk_sync <= '0;
-            spi_cs_n_sync <= '1;
-        end else begin
-            lab_clk_sync <= {lab_clk_sync[1:0], lab_clk};
-            spi_clk_sync <= {spi_clk_sync[1:0], spi_clk};
-            spi_cs_n_sync <= {spi_cs_n_sync[1:0], spi_cs_n};
-        end
-    end
-
-    assign lab_clock_rising_flag = lab_clk_sync[1] && !lab_clk_sync[2];
-
-    assign spi_clk_rising_flag = spi_clk_sync[1] && !spi_clk_sync[2];
-    assign spi_clk_falling_flag = !spi_clk_sync[1] && spi_clk_sync[2];
-
-    assign spi_cs_n_rising_flag = spi_cs_n_sync[1] && !spi_cs_n_sync[2];
-    assign spi_cs_n_falling_flag = !spi_cs_n_sync[1] && spi_cs_n_sync[2];
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    // Calculate checksum
-    always_comb begin
-        checksum = 8'hA5 ^ 8'h01;
-        checksum = checksum ^ cycle_count[7:0];
-        checksum = checksum ^ cycle_count[15:8];
-
-        for (int i = 0; i < 44; i++) begin
-            checksum = checksum ^ 8'(i);
-            checksum = checksum ^ {7'b0, debug_data[i]};
-        end
-    end
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    // Packet generation
-    function automatic logic [7:0] packet_generation (
-        input logic [6:0] index
-    );
-        logic [7:0] result;
-        logic [6:0] signal_id;
-
-        result = 8'h00;
-        signal_id = '0;
-
-        if (index == 7'd0) begin
-            // Start byte
-            result = 8'hA5;
-        end else if (index == 7'd1) begin
-            // Protocol version
-            result = 8'h01;
-        end else if (index == 7'd2) begin
-            // Cycle count low byte
-            result = cycle_count[7:0];
-        end else if (index == 7'd3) begin
-            // Cycle count high byte
-            result = cycle_count[15:8];
-        end else if (index >= 7'd4 && index < 7'd92) begin
-            // Each signal contains two bytes: {id, value}
-            signal_id = (index - 7'd4) >> 1;
-
-            if (index[0] == 1'b0) begin
-                result = {1'b0, signal_id};
-            end else begin
-                result = {7'b0, debug_data[signal_id]};
-            end
-        end else if (index == 7'd127) begin
-            // Checksum
-            result = checksum;
-        end
-
-        return result;
+    // The frame is constructed once per snapshot and cannot change mid-transfer.
+    // Constant mapping matches debug_ip.sv. Future generator should emit both.
+    function automatic logic [7:0] signal_width(input int id);
+        case (id)
+            0, 1, 2, 3: return 8'd1;
+            5, 6: return 8'd2;
+            7: return 8'd3;
+            default: return 8'd4;
+        endcase
     endfunction
 
-    assign tx_byte = packet_generation(byte_index);
-    assign next_tx_byte = packet_generation(byte_index + 1'b1);
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
+    function automatic logic [31:0] signal_value(input int id, input logic [43:0] snapshot);
+        case (id)
+            0: return {31'b0, snapshot[0]};
+            1: return {31'b0, snapshot[1]};
+            2: return {31'b0, snapshot[2]};
+            3: return {31'b0, snapshot[3]};
+            4: return {28'b0, snapshot[7:4]};
+            5: return {28'b0, snapshot[11:8]};
+            6: return {28'b0, snapshot[15:12]};
+            7: return {28'b0, snapshot[19:16]};
+            8: return {28'b0, snapshot[23:20]};
+            9: return {28'b0, snapshot[27:24]};
+            10: return {28'b0, snapshot[31:28]};
+            11: return {28'b0, snapshot[35:32]};
+            12: return {28'b0, snapshot[39:36]};
+            13: return {28'b0, snapshot[43:40]};
+            default: return 32'b0;
+        endcase
+    endfunction
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    // Data ready stays high until a complete SPI transaction
-    assign data_ready = (current_state == ready) || (current_state == transfer);
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
+    assign data_ready = (state == READY) || (state == TRANSFER);
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    // State register and datapath registers
-    always_ff @(posedge clk_50 or negedge rst_n) begin
+    always_ff @(posedge clk_50 or negedge rst_n) begin : controller
+        int offset;
+        int nbytes;
+        int width;
+        logic [31:0] value;
+        logic [7:0] sum;
         if (!rst_n) begin
-            current_state <= idle;
-
-            debug_data <= '0;
-            cycle_count <= '0;
+            lab_sync <= '0;
+            sck_sync <= '0;
+            cs_sync <= '1;
+            state <= IDLE;
             settle_count <= '0;
-
+            sample_count <= '0;
+            sample_probes <= '0;
             byte_index <= '0;
-            bit_index <= '0;
-            frame_complete_flag <= 1'b0;
-
+            bit_index <= 3'd7;
+            bits_sampled <= '0;
             spi_miso <= 1'b0;
+            for (int k = 0; k < FRAME_BYTES; k++) frame[k] <= 8'h00;
         end else begin
-            current_state <= next_state;
+            lab_sync <= {lab_sync[1:0], lab_clk};
+            sck_sync <= {sck_sync[1:0], spi_clk};
+            cs_sync <= {cs_sync[1:0], spi_cs_n};
 
-            case (current_state)
-                idle: begin
-                    if (lab_clock_rising_flag) begin
+            case (state)
+                IDLE: begin
+                    if (lab_rise) begin
                         settle_count <= '0;
+                        state <= SETTLE;
                     end
                 end
-
-                wait_settle: begin
-                    if (settle_count == 3'd4) begin
-                        debug_data <= probes;
-                        cycle_count <= cycle_count + 1'b1;
-                    end else begin
-                        settle_count <= settle_count + 1'b1;
-                    end
-                end
-
-                ready: begin
-                    if (spi_cs_n_falling_flag) begin
-                        byte_index <= '0;
-                        bit_index <= 3'd7;
-                        frame_complete_flag <= 1'b0;
-
-                        // First bit of 0xA5
-                        spi_miso <= 1'b1;
-                    end
-                end
-
-                transfer: begin
-                    // SPI mode 0: master samples on rising edge
-                    if (spi_clk_rising_flag && !spi_cs_n_sync[1]) begin
-                        if (byte_index == 7'd127 && bit_index == 3'd0) begin
-                            frame_complete_flag <= 1'b1;
-                        end
-                    end
-
-                    // FPGA updates MISO after falling edge
-                    if (spi_clk_falling_flag && !spi_cs_n_sync[1] &&
-                        !frame_complete_flag) begin
-
-                        if (bit_index == 3'd0) begin
-                            if (byte_index < 7'd127) begin
-                                byte_index <= byte_index + 1'b1;
-                                bit_index <= 3'd7;
-                                spi_miso <= next_tx_byte[7];
+                SETTLE: begin
+                    if (settle_count == SETTLE_CYCLES - 1) begin
+                        sample_probes <= probes;
+                        sample_count <= sample_count + 16'd1;
+                        // Generate frame from CURRENT probes, not stale snapshot.
+                        sum = 8'h00;
+                        for (int k = 0; k < FRAME_BYTES; k++) frame[k] <= 8'h00;
+                        frame[0] <= 8'hA5;
+                        frame[1] <= 8'h01;
+                        frame[2] <= (sample_count + 16'd1) & 16'h00FF;
+                        frame[3] <= (sample_count + 16'd1) >> 8;
+                        sum = 8'hA5 ^ 8'h01 ^ 8'((sample_count + 16'd1)) ^ 8'((sample_count + 16'd1) >> 8);
+                        offset = 4;
+                        for (int id = 0; id < NUM_SIGNALS; id++) begin
+                            width = int'(signal_width(id));
+                            nbytes = (width + 7) / 8;
+                            value = signal_value(id, probes);
+                            frame[offset] <= 8'(id);
+                            frame[offset+1] <= 8'(width);
+                            sum = sum ^ 8'(id) ^ 8'(width);
+                            for (int b = 0; b < nbytes; b++) begin
+                                frame[offset+2+b] <= 8'(value >> (b*8));
+                                sum = sum ^ 8'(value >> (b*8));
                             end
-                        end else begin
-                            bit_index <= bit_index - 1'b1;
-                            spi_miso <= tx_byte[bit_index - 1'b1];
+                            offset = offset + 2 + nbytes;
+                        end
+                        frame[127] <= sum;
+                        state <= READY;
+                    end else settle_count <= settle_count + 1'b1;
+                end
+                READY: begin
+                    // Refuse to start until CS is observed low.
+                    if (cs_fall) begin
+                        byte_index <= 0;
+                        bit_index <= 7;
+                        bits_sampled <= 0;
+                        spi_miso <= frame[0][7]; // pre-load MSB before first rising SCK
+                        state <= TRANSFER;
+                    end
+                end
+                TRANSFER: begin
+                    if (cs_rise) begin
+                        spi_miso <= 1'b0;
+                        // Only ACK a complete frame. Retry reads the same snapshot.
+                        if (bits_sampled == FRAME_BYTES * 8) state <= IDLE;
+                        else state <= READY;
+                    end else if (!cs_sync[1]) begin
+                        if (sck_rise && bits_sampled < FRAME_BYTES * 8)
+                            bits_sampled <= bits_sampled + 1'b1;
+                        if (sck_fall && bits_sampled < FRAME_BYTES * 8) begin
+                            if (bit_index == 0) begin
+                                if (byte_index < FRAME_BYTES - 1) begin
+                                    byte_index <= byte_index + 1'b1;
+                                    bit_index <= 7;
+                                    spi_miso <= frame[byte_index+1'b1][7];
+                                end
+                            end else begin
+                                bit_index <= bit_index - 1'b1;
+                                spi_miso <= frame[byte_index][bit_index-1'b1];
+                            end
                         end
                     end
-
-                    if (spi_cs_n_rising_flag) begin
-                        spi_miso <= 1'b0;
-                    end
                 end
-
-                default: begin
-                end
+                default: state <= IDLE;
             endcase
         end
     end
-
-    // Next-state logic
-    always_comb begin
-        next_state = current_state;
-
-        case (current_state)
-            idle: begin
-                if (lab_clock_rising_flag) begin
-                    next_state = wait_settle;
-                end
-            end
-
-            wait_settle: begin
-                if (settle_count == 3'd4) begin
-                    next_state = ready;
-                end
-            end
-
-            ready: begin
-                if (spi_cs_n_falling_flag) begin
-                    next_state = transfer;
-                end
-            end
-
-            transfer: begin
-                if (spi_cs_n_rising_flag) begin
-                    if (frame_complete_flag) begin
-                        next_state = idle;
-                    end else begin
-                        next_state = ready;
-                    end
-                end
-            end
-
-            default: begin
-                next_state = idle;
-            end
-        endcase
-    end
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-
 endmodule

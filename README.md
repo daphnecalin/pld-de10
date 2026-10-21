@@ -2,59 +2,41 @@
 
 ## Debug capture flow
 
-The FPGA samples the RALU debug probes after a rising edge of `lab_clk`, then
-holds that snapshot in a packet until an SPI read completes.
+The FPGA samples the RALU debug probes after a rising edge of `lab_clk` and
+holds the resulting packet until the RP2040 reads a complete SPI frame.
 
-```text
-lab_clk rising edge
-        |
-        v
-FPGA waits for its settle counter, snapshots 44 probe bits,
-and increments the 16-bit capture count
-        |
-        v
-data_ready goes high --------------------------+
-        |                                       |
-        | RP2040 GPIO interrupt                 | remains high
-        v                                       | through the read
-RP2040 prepares a 128-byte SPI transfer         |
-(RX buffer and DMA; dummy TX bytes make clocks) |
-        |                                       |
-        v                                       |
-SPI CS goes low; FPGA shifts packet on MISO     |
-        |                                       |
-        v                                       |
-RP2040 DMA stores received bytes in SRAM        |
-        |                                       |
-        v                                       |
-After all 128 bytes, SPI CS goes high; FPGA releases data_ready
-        |
-        v
-RP2040 processes the packet from its receive buffer
+```mermaid
+flowchart TD
+    A["FPGA captures probes<br/>and builds packet"] --> B["data_ready goes HIGH"]
+    B -->|"GPIO interrupt"| C["RP2040 starts SPI transaction"]
+    C --> D["RP2040 clocks 128 bytes<br/>with dummy MOSI data"]
+    D -->|"SPI MISO"| E["FPGA shifts packet"]
+    E --> F["SPI RX DMA stores bytes<br/>in RP2040 SRAM buffer"]
+    F --> G["Full frame received;<br/>CS goes HIGH"]
+    G --> H["FPGA lowers data_ready"]
+    F --> I["RP2040 validates and<br/>processes packet"]
 ```
 
 ### Step by step
 
 1. The FPGA synchronizes `lab_clk` to its 50 MHz clock and detects a rising
-   edge.
-2. It waits for the settle counter to reach 4, snapshots the 44-bit `probes`
-   bus, and increments the 16-bit capture count.
-3. `data_ready` goes high when the FPGA is ready to serve that snapshot. It
-   stays high throughout the SPI transfer and is released after a complete
-   128-byte frame and the end of chip select.
-4. Connect `data_ready` to an RP2040 GPIO configured for a rising-edge
-   interrupt. The interrupt can arm/start the transfer or signal a task to do
-   so. For reliable timing, configure the DMA and buffers ahead of time when
-   practical.
-5. The RP2040 is the SPI master. It asserts chip select and clocks 128 bytes
-   in SPI mode 0 (CPOL=0, CPHA=0). The FPGA is the slave and sends the packet
-   on MISO; MOSI is not used by this design. The RP2040 must transmit dummy
-   bytes to generate the clocks while receiving.
-6. The RP2040 SPI RX DMA channel can write those bytes directly into a
-   128-byte buffer in RP2040 SRAM. The DMA destination is the buffer address
-   supplied by the RP2040 program; there is no fixed memory address specified
-   by the FPGA. Once DMA completes, software can validate and process the
-   buffer.
+   edge. After the settle interval, it snapshots the probes, increments the
+   sample number, and builds the packet.
+2. `data_ready` goes high to indicate that a packet is available. The FPGA
+   holds that packet while it waits for a complete SPI read.
+3. Connect `data_ready` to an RP2040 GPIO configured for a rising-edge
+   interrupt. The interrupt can start the SPI transfer directly or signal a
+   task to start it.
+4. The RP2040 is the SPI master. It asserts chip select and clocks 128 bytes
+   in SPI mode 0 (CPOL=0, CPHA=0). It sends dummy MOSI data to generate the
+   clocks; the FPGA returns the packet on MISO.
+5. The RP2040 SPI RX DMA channel can write the received bytes into a
+   128-byte buffer in RP2040 SRAM. The RP2040 firmware chooses the buffer
+   address; the FPGA does not specify a fixed memory address.
+6. After a complete frame and the end of chip select, the FPGA lowers
+   `data_ready`. Firmware can then validate and process the received buffer.
+   An incomplete read does not consume the pending packet: `data_ready` stays
+   high so the RP2040 can retry.
 
 The DMA/interrupt flow above describes how firmware can integrate with this
 FPGA interface; this repository contains the FPGA RTL and simulation, not
@@ -65,47 +47,55 @@ levels.
 ## SPI packet format
 
 The FPGA always transmits exactly 128 bytes, most-significant bit first within
-each byte. Multi-byte fields are little-endian (least-significant byte first).
-The 44 probe values are each represented as a whole byte, either `0x00` or
-`0x01`.
+each byte. Multi-byte fields and signal values are little-endian
+(least-significant byte first). The frame contains 14 signal records. Their
+count is fixed by this implementation and is not sent as a separate field.
 
 | Byte offset | Length | Field | Description |
 | --- | ---: | --- | --- |
 | 0 | 1 | Start marker | `0xA5` |
 | 1 | 1 | Protocol version | `0x01` |
-| 2–3 | 2 | Capture count | Unsigned 16-bit count; byte 2 is low, byte 3 is high |
-| 4–91 | 88 | Probe records | 44 pairs of `{signal_id, value}`; each pair is two bytes |
-| 92–126 | 35 | Reserved padding | `0x00` |
-| 127 | 1 | Checksum | XOR checksum described below |
+| 2–3 | 2 | Sample number | Unsigned 16-bit count; byte 2 is low, byte 3 is high |
+| 4–45 | 42 | Signal records | 14 records of `{signal_id, width_in_bits, value}` |
+| 46–126 | 81 | Reserved padding | `0x00` |
+| 127 | 1 | Checksum | XOR of bytes 0–126 |
 
-Probe records are in ascending ID order. For signal ID `n`, byte `4 + 2*n`
-contains the ID and byte `5 + 2*n` contains its 0-or-1 value. The checksum is
-the XOR of `0xA5`, `0x01`, both capture-count bytes, and each probe record's ID
-and value bytes. Padding bytes are zero.
+Each record is packed in ascending signal ID order:
+
+| Record bytes | Field | Description |
+| --- | --- | --- |
+| First | Signal ID | Index from the debug IP signal map below |
+| Second | Width | Number of meaningful bits in the signal value |
+| Following | Value | `ceil(width / 8)` bytes, least-significant byte first |
+
+All current signals are at most 4 bits wide, so each value occupies one byte.
+Thus every current record is 3 bytes and byte 4 begins record 0: it is the
+signal ID, not a separate signal-count field. The records end at byte 45;
+bytes 46–126 are zero padding. The checksum in byte 127 is the XOR of every
+byte from the start marker through the final padding byte.
 
 ### Debug IP signal ID map
 
-Each ID identifies one bit of the 44-bit `probes` bus. For vector signals,
-bits are listed from least significant to most significant. The narrower
-`msa`, `msb`, and `msc` inputs are zero-extended in `debug_demo`; their
-unused upper probe bits therefore read as zero.
+The packet's signal ID selects a signal as a whole. The listed probe slice
+shows where its value is wired in the 44-bit `probes` bus. Narrow inputs are
+zero-extended by `debug_demo` to fill their four-bit probe slices.
 
-| ID(s) | Signal bit(s) |
-| --- | --- |
-| 0 | `lab_clk` (debug IP input `clk`) |
-| 1 | `s_l` |
-| 2 | `cin` |
-| 3 | `cout` |
-| 4–7 | `input_data[0]` through `input_data[3]` |
-| 8–11 | `msa[0]` through `msa[3]` (`msa[2:3]` are zero-extended) |
-| 12–15 | `msb[0]` through `msb[3]` (`msb[2:3]` are zero-extended) |
-| 16–19 | `msc[0]` through `msc[3]` (`msc[3]` is zero-extended) |
-| 20–23 | `reg_a[0]` through `reg_a[3]` |
-| 24–27 | `reg_b[0]` through `reg_b[3]` |
-| 28–31 | `output_data[0]` through `output_data[3]` |
-| 32–35 | `a_and_b[0]` through `a_and_b[3]` |
-| 36–39 | `a_or_b[0]` through `a_or_b[3]` |
-| 40–43 | `a_plus_b[0]` through `a_plus_b[3]` |
+| Packet ID | Signal | Width (bits) | Probe bit(s) |
+| ---: | --- | ---: | --- |
+| 0 | `lab_clk` (debug IP input `clk`) | 1 | 0 |
+| 1 | `s_l` | 1 | 1 |
+| 2 | `cin` | 1 | 2 |
+| 3 | `cout` | 1 | 3 |
+| 4 | `input_data` | 4 | 7:4 |
+| 5 | `msa` | 2 | 11:8 |
+| 6 | `msb` | 2 | 15:12 |
+| 7 | `msc` | 3 | 19:16 |
+| 8 | `reg_a` | 4 | 23:20 |
+| 9 | `reg_b` | 4 | 27:24 |
+| 10 | `output_data` | 4 | 31:28 |
+| 11 | `a_and_b` | 4 | 35:32 |
+| 12 | `a_or_b` | 4 | 39:36 |
+| 13 | `a_plus_b` | 4 | 43:40 |
 
 ## RTL and simulation
 
