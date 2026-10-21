@@ -5,28 +5,32 @@
 The FPGA samples the RALU debug probes after a rising edge of `lab_clk`, then
 holds that snapshot in a packet until an SPI read completes.
 
-```mermaid
-flowchart TD
-    subgraph FPGA
-        A["lab_clk rising edge"] --> B["Wait for settle counter"]
-        B --> C["Snapshot 44 probes<br/>Increment capture count"]
-        C --> D["data_ready goes HIGH<br/>Snapshot held during SPI read"]
-        G["FPGA shifts 128-byte packet on MISO"] --> H["SPI CS rises after full frame"]
-        H --> I["data_ready goes LOW"]
-    end
-
-    subgraph RP2040
-        E["GPIO rising-edge interrupt"]
-        F["Assert SPI CS<br/>Send dummy bytes to generate clocks"]
-        J["SPI RX DMA writes 128 bytes<br/>to an SRAM receive buffer"]
-        K["Process received packet"]
-        E --> F --> G
-        G --> J --> H
-        H --> K
-    end
-
-    D -->|"data_ready signal"| E
-    I -. "ready for next capture" .-> A
+```text
+lab_clk rising edge
+        |
+        v
+FPGA waits for its settle counter, snapshots 44 probe bits,
+and increments the 16-bit capture count
+        |
+        v
+data_ready goes high --------------------------+
+        |                                       |
+        | RP2040 GPIO interrupt                 | remains high
+        v                                       | through the read
+RP2040 prepares a 128-byte SPI transfer         |
+(RX buffer and DMA; dummy TX bytes make clocks) |
+        |                                       |
+        v                                       |
+SPI CS goes low; FPGA shifts packet on MISO     |
+        |                                       |
+        v                                       |
+RP2040 DMA stores received bytes in SRAM        |
+        |                                       |
+        v                                       |
+After all 128 bytes, SPI CS goes high; FPGA releases data_ready
+        |
+        v
+RP2040 processes the packet from its receive buffer
 ```
 
 ### Step by step
