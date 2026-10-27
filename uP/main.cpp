@@ -1,28 +1,61 @@
 // Created: 10/24/26
-// Writes to a
+// Updated: 10/26/26
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "pico/binary_info.h"
+#include "boards/adafruit_feather_rp2040.h"
 
 #define I2C_PORT i2c_default
 #define I2C_PIN_SDA PICO_DEFAULT_I2C_SDA_PIN
 #define I2C_PIN_SCL PICO_DEFAULT_I2C_SCL_PIN
 
+#define BUTTON_UP_PIN 5
+#define BUTTON_DOWN_PIN 9
+
 // more docs: https://ssd1306.harbys.me/
 #include "libraries/pico-ssd1306/ssd1306.h"
 #include "libraries/pico-ssd1306/textRenderer/TextRenderer.h"
-// Turn the led on or off
-void pico_set_led(bool led_on)
+
+/* *********************  Type Definitions  ************************/
+
+typedef enum state_t
 {
-    gpio_put(PICO_DEFAULT_LED_PIN, led_on);
+    MENU,
+    ANALYZE,
+    SETTINGS
+} state_t;
+
+/* *********************  Type Definitions  ************************/
+
+/* *********************  Global Variables  ************************/
+
+pico_ssd1306::SSD1306 display = pico_ssd1306::SSD1306(I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
+
+state_t state = menu;
+
+/* *********************  Global Variables  ************************/
+
+/* *********************  Functions not in a header file yet  ************************/
+
+void drawText5x8(const char *text)
+{
+    drawText(&display, font_5x8, text, 0, 0);
 }
 
-int pico_led_init(void)
+// Set GPIO pins for button navigation
+int button_init(void)
 {
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    gpio_init(BUTTON_DOWN_PIN);
+    gpio_init(BUTTON_UP_PIN);
+    gpio_set_dir(BUTTON_DOWN_PIN, GPIO_IN);
+    gpio_set_dir(BUTTON_UP_PIN, GPIO_IN);
+    // TODO: choose pull-up or pull-down
     return PICO_OK;
 }
+
+/* *********************  Functions not in a header file yet  ************************/
+
+/* *********************  Program Code  ************************/
 
 int main(void)
 {
@@ -33,39 +66,21 @@ int main(void)
     gpio_pull_up(I2C_PIN_SDA);
     gpio_pull_up(I2C_PIN_SCL);
 
-    // Create a new display object
-    pico_ssd1306::SSD1306 display = pico_ssd1306::SSD1306(I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
+    button_init();
 
-    // create a vertical line on x: 64 y:0-63
-    for (int y = 0; y < 64; y++)
-    {
-        display.setPixel(64, y);
-    }
-    display.sendBuffer(); // Send buffer to device and show on screen
+    int cursor_pos = 0;
 
-    // Draw some text
-    // Notice how we first pass the address of display object to the function
-    // drawText(&display, font_12x16, "TEST text", 0, 0);
-    int x = 0;
     while (true)
     {
-        // int rc = pico_led_init();
-        // hard_assert(rc == PICO_OK);
-        // pico_set_led(true);
-        // sleep_ms(500);
-        // pico_set_led(false);
-        // sleep_ms(500);
-        // create a vertical line on x: 64 y:0-63
         display.clear();
-        for (int y = 0; y < 64; y++)
+        if (state_t == MENU)
         {
-            display.setPixel(x, y);
-        }
-        x++;
-        if (x > 128)
-        {
-            x = 0;
+            drawText5x8("Please Leave Design 1!\n");
+            drawText5x8("Logic Analyzer\n");
+            drawText(&display, font_5x8, "Settings\n", 0, 0);
         }
         display.sendBuffer(); // Send buffer to device and show on screen
     }
 }
+
+/* *********************  Program Code  ************************/
