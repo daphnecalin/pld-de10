@@ -3,7 +3,8 @@
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "pico/binary_info.h"
-#include "boards/adafruit_feather_rp2040.h"
+
+#include "peripheral.h"
 
 #define I2C_PORT i2c_default
 #define I2C_PIN_SDA PICO_DEFAULT_I2C_SDA_PIN
@@ -35,25 +36,9 @@ state_t state = menu;
 
 /* *********************  Global Variables  ************************/
 
-/* *********************  Functions not in a header file yet  ************************/
+/* *********************  Functions  ************************/
 
-void drawText5x8(const char *text)
-{
-    drawText(&display, font_5x8, text, 0, 0);
-}
-
-// Set GPIO pins for button navigation
-int button_init(void)
-{
-    gpio_init(BUTTON_DOWN_PIN);
-    gpio_init(BUTTON_UP_PIN);
-    gpio_set_dir(BUTTON_DOWN_PIN, GPIO_IN);
-    gpio_set_dir(BUTTON_UP_PIN, GPIO_IN);
-    // TODO: choose pull-up or pull-down
-    return PICO_OK;
-}
-
-/* *********************  Functions not in a header file yet  ************************/
+/* *********************  Functions  ************************/
 
 /* *********************  Program Code  ************************/
 
