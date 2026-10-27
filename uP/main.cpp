@@ -26,7 +26,7 @@ int pico_led_init(void)
 
 int main(void)
 {
-    i2c_init(I2C_PORT, 1000000); // Use i2c port with baud rate of 1Mhz
+    i2c_init(I2C_PORT, 400000); // Use i2c port with baud rate of 400khz
     // Set pins for I2C operation
     gpio_set_function(I2C_PIN_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_PIN_SCL, GPIO_FUNC_I2C);
@@ -34,7 +34,7 @@ int main(void)
     gpio_pull_up(I2C_PIN_SCL);
 
     // Create a new display object
-    pico_ssd1306::SSD1306 display = pico_ssd1306::SSD1306(I2C_PORT, 0x3D, pico_ssd1306::Size::W128xH64);
+    pico_ssd1306::SSD1306 display = pico_ssd1306::SSD1306(I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
 
     // create a vertical line on x: 64 y:0-63
     for (int y = 0; y < 64; y++)
@@ -46,18 +46,25 @@ int main(void)
     // Draw some text
     // Notice how we first pass the address of display object to the function
     // drawText(&display, font_12x16, "TEST text", 0, 0);
+    int x = 0;
     while (true)
     {
-        int rc = pico_led_init();
-        hard_assert(rc == PICO_OK);
-        pico_set_led(true);
-        sleep_ms(500);
-        pico_set_led(false);
-        sleep_ms(500);
+        // int rc = pico_led_init();
+        // hard_assert(rc == PICO_OK);
+        // pico_set_led(true);
+        // sleep_ms(500);
+        // pico_set_led(false);
+        // sleep_ms(500);
         // create a vertical line on x: 64 y:0-63
+        display.clear();
         for (int y = 0; y < 64; y++)
         {
-            display.setPixel(64, y);
+            display.setPixel(x, y);
+        }
+        x++;
+        if (x > 128)
+        {
+            x = 0;
         }
         display.sendBuffer(); // Send buffer to device and show on screen
     }
