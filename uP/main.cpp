@@ -32,7 +32,7 @@ typedef enum state_t
 
 pico_ssd1306::SSD1306 display = pico_ssd1306::SSD1306(I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
 
-state_t state = menu;
+state_t state = MENU;
 
 /* *********************  Global Variables  ************************/
 
@@ -58,7 +58,7 @@ int main(void)
     while (true)
     {
         display.clear();
-        if (state_t == MENU)
+        if (state == MENU)
         {
             drawText5x8("Please Leave Design 1!\n");
             drawText5x8("Logic Analyzer\n");
