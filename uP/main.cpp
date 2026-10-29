@@ -10,8 +10,10 @@
 #define I2C_PIN_SDA PICO_DEFAULT_I2C_SDA_PIN
 #define I2C_PIN_SCL PICO_DEFAULT_I2C_SCL_PIN
 
-#define BUTTON_UP_PIN 5
+#define BUTTON_UP_PIN 10
 #define BUTTON_DOWN_PIN 9
+#define BUTTON_RIGHT_PIN 6
+#define BUTTON_LEFT_PIN 5
 
 // more docs: https://ssd1306.harbys.me/
 #include "libraries/pico-ssd1306/ssd1306.h"
@@ -63,6 +65,12 @@ int main(void)
             drawText5x8("Please Leave Design 1!\n");
             drawText5x8("Logic Analyzer\n");
             drawText(&display, font_5x8, "Settings\n", 0, 0);
+        }
+        else if (state == ANALYZE)
+        {
+        }
+        else if (state == SETTINGS)
+        {
         }
         display.sendBuffer(); // Send buffer to device and show on screen
     }
