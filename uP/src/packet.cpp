@@ -1,5 +1,4 @@
 #include "packet.h"
-#include <cmath>
 
 namespace packet {
     std::optional<Packet> parse(const Frame& frame) {
