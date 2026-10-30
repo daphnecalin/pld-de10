@@ -1,0 +1,11 @@
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\bin\Debug\net8.0\QuartusDebugger.Core.deps.json
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\bin\Debug\net8.0\QuartusDebugger.Core.dll
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\bin\Debug\net8.0\QuartusDebugger.Core.pdb
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\obj\Debug\net8.0\QuartusDebugger.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\obj\Debug\net8.0\QuartusDebugger.Core.AssemblyInfoInputs.cache
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\obj\Debug\net8.0\QuartusDebugger.Core.AssemblyInfo.cs
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\obj\Debug\net8.0\QuartusDebugger.Core.csproj.CoreCompileInputs.cache
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\obj\Debug\net8.0\QuartusDebugger.Core.dll
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\obj\Debug\net8.0\refint\QuartusDebugger.Core.dll
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\obj\Debug\net8.0\QuartusDebugger.Core.pdb
+C:\Users\soorh\Landing\School\Fall_2026\Design_One\pld-de10\QuartusDebugger.Core\obj\Debug\net8.0\ref\QuartusDebugger.Core.dll

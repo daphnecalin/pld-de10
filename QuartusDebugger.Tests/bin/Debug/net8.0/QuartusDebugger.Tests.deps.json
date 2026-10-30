@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "QuartusDebugger.Tests/1.0.0": {
+        "dependencies": {
+          "QuartusDebugger.Core": "1.0.0"
+        },
+        "runtime": {
+          "QuartusDebugger.Tests.dll": {}
+        }
+      },
+      "QuartusDebugger.Core/1.0.0": {
+        "runtime": {
+          "QuartusDebugger.Core.dll": {
+            "assemblyVersion": "1.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "QuartusDebugger.Tests/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "QuartusDebugger.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

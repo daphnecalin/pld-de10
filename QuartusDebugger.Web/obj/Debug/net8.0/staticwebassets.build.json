@@ -1,0 +1,39 @@
+{
+  "Version": 1,
+  "Hash": "9c01/L7N1Rsl5eB0QQtkjs+IRoojOHQecQN63f1HQj8=",
+  "Source": "QuartusDebugger.Web",
+  "BasePath": "_content/QuartusDebugger.Web",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [
+    {
+      "Name": "QuartusDebugger.Web\\wwwroot",
+      "Source": "QuartusDebugger.Web",
+      "ContentRoot": "C:\\Users\\soorh\\Landing\\School\\Fall_2026\\Design_One\\pld-de10\\QuartusDebugger.Web\\wwwroot\\",
+      "BasePath": "_content/QuartusDebugger.Web",
+      "Pattern": "**"
+    }
+  ],
+  "Assets": [
+    {
+      "Identity": "C:\\Users\\soorh\\Landing\\School\\Fall_2026\\Design_One\\pld-de10\\QuartusDebugger.Web\\wwwroot\\index.html",
+      "SourceId": "QuartusDebugger.Web",
+      "SourceType": "Discovered",
+      "ContentRoot": "C:\\Users\\soorh\\Landing\\School\\Fall_2026\\Design_One\\pld-de10\\QuartusDebugger.Web\\wwwroot\\",
+      "BasePath": "_content/QuartusDebugger.Web",
+      "RelativePath": "index.html",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "AssetMergeBehavior": "PreferTarget",
+      "AssetMergeSource": "",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot\\index.html"
+    }
+  ]
+}
