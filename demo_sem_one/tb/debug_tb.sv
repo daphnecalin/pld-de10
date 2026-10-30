@@ -13,6 +13,8 @@ module debug_tb;
     logic [43:0] expected_snapshot;
     logic [15:0] expected_sample=0;
     int errors=0;
+    string export_dir = "demo_sem_one/tb/generated/run-1";
+    bit export_enabled=0;
 
     always #(CLK_PERIOD/2) clk_50=~clk_50;
     debug_ip debug_inst (.*,.clk(lab_clk));
@@ -20,8 +22,10 @@ module debug_tb;
 
     task automatic apply_stimulus(input int n);
         s_l = n[0]; cin = n[1]; cout = n[2];
-        input_data = 4'(n+3); msa = 4'(n+1); msb = 4'(n+2);
-        msc = 4'(n+3); reg_a = 4'(n+4); reg_b = 4'(n+5);
+        input_data = 4'(n+3);
+        // Match the zero-extended control inputs in debug_demo.
+        msa = {2'b00, 2'(n+1)}; msb = {2'b00, 2'(n+2)};
+        msc = {1'b0, 3'(n+3)}; reg_a = 4'(n+4); reg_b = 4'(n+5);
         output_data = 4'(n+6);
         a_and_b = reg_a & reg_b;
         a_or_b = reg_a | reg_b;
@@ -110,7 +114,28 @@ module debug_tb;
         end
     endtask
 
+    // Export observed SPI bytes, never a separately reconstructed packet.
+    // Expectations come from the snapshot saved before pending inputs change.
+    task automatic export_packet(input int test_number);
+        int fd;
+        string path;
+        path=$sformatf("%s/sample_%0d.txt", export_dir, test_number);
+        fd=$fopen(path, "w");
+        if(fd==0) $fatal(1,"Cannot open %s; create the export directory first",path);
+        $fdisplay(fd,"PLD_SPI_FIXTURE_V1");
+        $fdisplay(fd,"sample %0d",expected_sample);
+        $fwrite(fd,"bytes");
+        for(int i=0;i<128;i++) $fwrite(fd," %02h",rx[i]);
+        $fwrite(fd,"\n");
+        for(int id=0;id<14;id++)
+            $fdisplay(fd,"signal %0d %0d %0d",id,signal_width(id),expected_value(id));
+        $fclose(fd);
+        $display("EXPORTED: %s",path);
+    endtask
+
+
     initial begin : test_sequence
+        export_enabled=$value$plusargs("EXPORT_DIR=%s",export_dir);
         #200; rst_n=1; #200;
         for(int t=0;t<3;t++) begin
             apply_stimulus(t);
@@ -127,6 +152,8 @@ module debug_tb;
             transaction(128);
             check_packet();
             if(data_ready !== 1'b0) begin $error("full frame did not clear ready");errors++;end
+            // Any regression failure prevents subsequent fixture exports.
+            if(export_enabled && errors==0) export_packet(t+1);
             #1000;
         end
         if(errors==0) $display("PASS: all 3 samples, interrupted retry, and checksums");
