@@ -103,3 +103,7 @@ zero-extended by `debug_demo` to fill their four-bit probe slices.
 - `spi_slave.sv` captures probes and implements the packet and SPI interface.
 - `debug_demo.sv` connects the RALU, debug IP, and SPI slave.
 - `debug_tb.sv` simulates receiving and checking a complete 128-byte packet.
+
+The testbench can also export verified SPI reads for firmware testing. See
+[packet export instructions](demo_sem_one/tb/README.md) for Questa commands,
+header generation, and the firmware handoff format.
