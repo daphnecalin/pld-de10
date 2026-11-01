@@ -1,3 +1,10 @@
+__pycache__/
+/demo_sem_one/tb/generated
+# Generated handoff files only
+/uP/src/test/sample_*.txt
+/uP/src/test/debug_packets.h
+/uP/src/test/expected_packets.json
+build/
 /uP/build/
 /uP/build.sh
 /build/
