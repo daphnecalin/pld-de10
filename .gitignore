@@ -5,3 +5,7 @@ __pycache__/
 /uP/src/test/debug_packets.h
 /uP/src/test/expected_packets.json
 build/
+/uP/build/
+/uP/build.sh
+/build/
+/.vscode/
