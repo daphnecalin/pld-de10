@@ -1,5 +1,7 @@
 """Converter tests use synthetic data, not claimed RTL simulation results."""
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from functools import reduce
@@ -24,16 +26,38 @@ def make_fixture(path, sample):
 
 
 class ExportTests(unittest.TestCase):
+    def test_cli_defaults_to_firmware_test_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "uP" / "src" / "test"
+            output.mkdir(parents=True)
+            for i in range(1, 4):
+                make_fixture(output / f"sample_{i}.txt", i)
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("export_packets.py").resolve())],
+                cwd=root, capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((output / "debug_packets.h").is_file())
+            self.assertTrue((output / "expected_packets.json").is_file())
+
     def test_handoff_and_repeatability(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             for i in range(1, 4):
                 make_fixture(root / f"sample_{i}.txt", i)
-            generate(root, root)
-            first = (root / "debug_packets.h").read_bytes()
-            generate(root, root)
-            self.assertEqual(first, (root / "debug_packets.h").read_bytes())
-            expected = json.loads((root / "expected_packets.json").read_text())
+            output = root / "uP" / "src" / "test"
+            generate(root, output)
+            first = (output / "debug_packets.h").read_bytes()
+            header = first.decode("ascii")
+            self.assertIn('#include "../packet.h"', header)
+            self.assertIn("packet::Frame frame;", header)
+            self.assertIn("std::array<packet::Signal, 14> signals;", header)
+            self.assertNotIn("struct Signal", header)
+            self.assertFalse((root / "debug_packets.h").exists())
+            generate(root, output)
+            self.assertEqual(first, (output / "debug_packets.h").read_bytes())
+            expected = json.loads((output / "expected_packets.json").read_text())
             self.assertEqual([x["sample_number"] for x in expected], [1, 2, 3])
             self.assertEqual(len(expected[0]["signals"]), 14)
 

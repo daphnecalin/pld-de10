@@ -53,13 +53,12 @@ def generate(input_dir, output_dir):
         raise ValueError("expected samples 1, 2, 3 from one regression run")
     header = [
         "// Generated from verified simulated SPI reads; do not edit.",
-        "#pragma once", "#include <array>", "#include <cstdint>",
+        "#pragma once", "#include <array>", "#include <cstdint>", '#include "../packet.h"',
         "namespace pld_test {",
-        "struct Signal { std::uint8_t id, width; std::uint32_t value; };",
         "struct Fixture {",
-        "    std::array<std::uint8_t, 128> frame;",
+        "    packet::Frame frame;",
         "    std::uint16_t sample_number;",
-        "    std::array<Signal, 14> signals;",
+        "    std::array<packet::Signal, 14> signals;",
         "};",
         "inline constexpr std::array<Fixture, 3> fixtures = {{",
     ]
@@ -83,10 +82,12 @@ def generate(input_dir, output_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input_dir", type=Path)
-    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("input_dir", type=Path, nargs="?", default=Path("uP/src/test"),
+                        help="capture directory (default: uP/src/test, relative to cwd)")
+    parser.add_argument("--output-dir", type=Path, default=Path("uP/src/test"),
+                        help="handoff directory (default: uP/src/test, relative to cwd)")
     args = parser.parse_args()
     try:
-        generate(args.input_dir, args.output_dir or args.input_dir)
+        generate(args.input_dir, args.output_dir)
     except (ValueError, OSError) as error:
         parser.exit(1, f"Packet export failed: {error}\n")

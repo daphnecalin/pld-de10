@@ -13,7 +13,7 @@ module debug_tb;
     logic [43:0] expected_snapshot;
     logic [15:0] expected_sample=0;
     int errors=0;
-    string export_dir = "demo_sem_one/tb/generated/run-1";
+    string export_dir = "uP/src/test";
     bit export_enabled=0;
 
     always #(CLK_PERIOD/2) clk_50=~clk_50;
