@@ -6,7 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_executable(main
-main.cpp)
+main.cpp peripheral.cpp)
+
 add_subdirectory(libraries/pico-ssd1306)
 target_link_libraries(main pico_stdlib pico_ssd1306 hardware_i2c)
 
