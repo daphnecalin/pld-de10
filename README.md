@@ -54,11 +54,26 @@ dotnet run --project .\QuartusDebugger.Cli -- .\samples\demo.zip .\output
 
 - Top-level schematic `pin` records (input/output), including bus names `DATA[7..0]`.
 - **Named** `connector` records, including bus ranges.
+- Indexed bit names such as `MSA[1]`. A bit selection is omitted when a named
+  bus in the same hierarchy covers its index, regardless of declaration order.
+  For example, `MSA[1..0]` covers `MSA[1]` and `MSA[0]`; `MSA[7..6]` does not.
+  Ascending ranges are supported too. Standalone or uncovered selections remain
+  one-bit probes with their indices preserved in the C++ metadata names.
+- Repeated bus names must have identical source range endpoints and order;
+  conflicting ranges are rejected even when their widths match.
 - Recursion through `symbol` records where the symbol type matches another submitted `.bdf` filename, collecting names like `top.alu0.carry`.
 - Signal deduplication by hierarchical name; generated SystemVerilog uses safe aliases `sig_0000`, etc.
 - C++17 `constexpr std::array` for metadata with bounds-checked `at()` and non-throwing `try_get_signal()`.
 
 ## Critical limitations
+
+- Bus-bit deduplication uses names and declared ranges within each hierarchy,
+  not electrical connectivity. Covered bit selections have no separate signal ID
+  or alias entry in the header; consumers extract their bits from the bus value.
+  Bus inputs are packed into zero-based generated ports, with the source range's
+  right endpoint corresponding to packed bit 0 when wired in that order. The
+  header's `lsb`/`msb` describe probe positions, not original schematic indices.
+  Regenerate and use `.sv` and `.hpp` together because signal IDs/offsets may change.
 
 - **Not all internal signals are recovered.** In particular, **unnamed wires** are not represented. Collecting every electrical net requires interpreting connector coordinates, junctions, symbol port positions, rotations, pin offsets and bus tap semantics. Built-in symbol primitive outputs are not traversed as HDL signals.
 - `.bdf` hierarchy is resolved by matching symbol type to `.bdf` filename. Custom `.bsf` hierarchy resolution and mixed BDF/HDL submodule traversal are not implemented.

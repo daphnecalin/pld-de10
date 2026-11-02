@@ -1,3 +1,0 @@
-﻿<Project>
-  <Import Project="..\buildMultiTargeting\QuartusDebugger.Web.props" />
-</Project>
