@@ -1,8 +1,8 @@
 #ifndef PERIPHERAL_H_
 #define PERIPHERAL_H_
 
-#include "libraries/pico-ssd1306/ssd1306.h"
-#include "libraries/pico-ssd1306/textRenderer/TextRenderer.h"
+#include "../libraries/pico-ssd1306/ssd1306.h"
+#include "../libraries/pico-ssd1306/textRenderer/TextRenderer.h"
 
 #define I2C_PORT i2c_default
 #define I2C_PIN_SDA PICO_DEFAULT_I2C_SDA_PIN
