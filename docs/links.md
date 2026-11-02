@@ -1,5 +1,6 @@
 # rp2040
 Official
+- [Datasheet](https://pip-assets.raspberrypi.com/categories/814-rp2040/documents/RP-008371-DS-1-rp2040-datasheet.pdf)
 - [Basic SDK setup](https://www.raspberrypi.com/documentation/microcontrollers/c_sdk.html)
 - [More setup](https://pip-assets.raspberrypi.com/categories/609-microcontroller-boards/documents/RP-008276-DS-4-getting-started-with-pico.pdf)
 - [SDK docs](https://pip-assets.raspberrypi.com/categories/609-microcontroller-boards/documents/RP-009085-KB-4-raspberry-pi-pico-c-sdk.pdf)

@@ -1,64 +1,81 @@
 // Created: 10/24/26
-// Writes to a
-#include "pico/stdlib.h"
+// Updated: 10/26/26
 #include "hardware/i2c.h"
 #include "pico/binary_info.h"
+#include "pico/stdlib.h"
+#include <pico/time.h>
 
-#define I2C_PORT i2c_default
-#define I2C_PIN_SDA PICO_DEFAULT_I2C_SDA_PIN
-#define I2C_PIN_SCL PICO_DEFAULT_I2C_SCL_PIN
+#include "peripheral.h"
+
+#define DEBOUNCE_TIME_US 40000
+
+#include "libraries/pico-ssd1306/ssd1306.h"
+#include "libraries/pico-ssd1306/textRenderer/TextRenderer.h"
 
 // more docs: https://ssd1306.harbys.me/
-#include "ssd1306.h"
-#include "textRenderer/TextRenderer.h"
-// Turn the led on or off
-void pico_set_led(bool led_on)
-{
-    gpio_put(PICO_DEFAULT_LED_PIN, led_on);
-}
 
-int pico_led_init(void)
-{
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-    return PICO_OK;
-}
+/* *********************  Type Definitions  ************************/
 
-int main(void)
-{
-    i2c_init(I2C_PORT, 1000000); // Use i2c port with baud rate of 1Mhz
-    // Set pins for I2C operation
-    gpio_set_function(I2C_PIN_SDA, GPIO_FUNC_I2C);
-    gpio_set_function(I2C_PIN_SCL, GPIO_FUNC_I2C);
-    gpio_pull_up(I2C_PIN_SDA);
-    gpio_pull_up(I2C_PIN_SCL);
+typedef enum state_t { MENU, ANALYZE, SETTINGS } state_t;
 
-    // Create a new display object
-    pico_ssd1306::SSD1306 display = pico_ssd1306::SSD1306(I2C_PORT, 0x3D, pico_ssd1306::Size::W128xH64);
+/* *********************  Type Definitions  ************************/
 
-    // create a vertical line on x: 64 y:0-63
-    for (int y = 0; y < 64; y++)
-    {
-        display.setPixel(64, y);
+/* *********************  Global Variables  ************************/
+
+pico_ssd1306::SSD1306 display =
+    pico_ssd1306::SSD1306(I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
+state_t state = MENU;
+
+/* *********************  Global Variables  ************************/
+
+/* *********************  Functions  ************************/
+
+/* *********************  Functions  ************************/
+
+/* *********************  Program Code  ************************/
+
+int main(void) {
+  peripheral_init();
+
+  int cursor_pos = 0;
+  bool up_b, down_b, left_b, right_b = 0;
+  absolute_time_t last_up_t, last_down_t, last_left_t, last_right_t = 0;
+
+  while (true) {
+    display.clear();
+
+    // get buttons every 40 ms
+    if (get_absolute_time() - last_up_t > DEBOUNCE_TIME_US) {
+      up_b = gpio_get(BUTTON_UP_PIN);
+      last_up_t = get_absolute_time();
+    }
+    if (get_absolute_time() - last_down_t > DEBOUNCE_TIME_US) {
+      down_b = gpio_get(BUTTON_DOWN_PIN);
+      last_down_t = get_absolute_time();
+    }
+    if (get_absolute_time() - last_left_t > DEBOUNCE_TIME_US) {
+      left_b = gpio_get(BUTTON_LEFT_PIN);
+      last_left_t = get_absolute_time();
+    }
+    if (get_absolute_time() - last_right_t > DEBOUNCE_TIME_US) {
+      right_b = gpio_get(BUTTON_RIGHT_PIN);
+      last_right_t = get_absolute_time();
+    }
+
+    if (state == MENU) {
+
+      if (up_b == 0) {
+        drawText5x8("Please Leave Design 1!\n", display);
+      } else {
+        drawText5x8("Logic Analyzer\n", display);
+      }
+
+      drawText(&display, font_5x8, "Settings\n", 0, 0);
+    } else if (state == ANALYZE) {
+    } else if (state == SETTINGS) {
     }
     display.sendBuffer(); // Send buffer to device and show on screen
-
-    // Draw some text
-    // Notice how we first pass the address of display object to the function
-    // drawText(&display, font_12x16, "TEST text", 0, 0);
-    while (true)
-    {
-        int rc = pico_led_init();
-        hard_assert(rc == PICO_OK);
-        pico_set_led(true);
-        sleep_ms(500);
-        pico_set_led(false);
-        sleep_ms(500);
-        // create a vertical line on x: 64 y:0-63
-        for (int y = 0; y < 64; y++)
-        {
-            display.setPixel(64, y);
-        }
-        display.sendBuffer(); // Send buffer to device and show on screen
-    }
+  }
 }
+
+/* *********************  Program Code  ************************/
