@@ -53,7 +53,7 @@ def generate(input_dir, output_dir):
         raise ValueError("expected samples 1, 2, 3 from one regression run")
     header = [
         "// Generated from verified simulated SPI reads; do not edit.",
-        "#pragma once", "#include <array>", "#include <cstdint>", '#include "../packet.h"',
+        "#pragma once", "#include <array>", "#include <cstdint>", '#include "packet.h"',
         "namespace pld_test {",
         "struct Fixture {",
         "    packet::Frame frame;",
@@ -82,9 +82,9 @@ def generate(input_dir, output_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input_dir", type=Path, nargs="?", default=Path("uP/src/test"),
+    parser.add_argument("input_dir", type=Path, nargs="?", default=Path("uP/test/generated"),
                         help="capture directory (default: uP/src/test, relative to cwd)")
-    parser.add_argument("--output-dir", type=Path, default=Path("uP/src/test"),
+    parser.add_argument("--output-dir", type=Path, default=Path("uP/test/generated"),
                         help="handoff directory (default: uP/src/test, relative to cwd)")
     args = parser.parse_args()
     try:
