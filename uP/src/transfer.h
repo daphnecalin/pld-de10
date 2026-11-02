@@ -1,5 +1,5 @@
 #pragma once
-#include "packet.cpp"
+#include "core/packet.h"
 
 namespace transfer {
     // set up spi peripheral on gpios

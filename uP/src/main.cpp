@@ -9,8 +9,8 @@
 #define I2C_PIN_SCL PICO_DEFAULT_I2C_SCL_PIN
 
 // more docs: https://ssd1306.harbys.me/
-#include "libraries/pico-ssd1306/ssd1306.h"
-#include "libraries/pico-ssd1306/textRenderer/TextRenderer.h"
+#include "ssd1306.h"
+#include "textRenderer/TextRenderer.h"
 // Turn the led on or off
 void pico_set_led(bool led_on)
 {

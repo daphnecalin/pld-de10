@@ -6,7 +6,7 @@
 
 namespace packet {
 // using for common things
-using std::uint8_t, std::uint32_t, std::size_t;
+using std::uint8_t, std::uint16_t, std::uint32_t, std::size_t;
 
 // constexpr instead of #define is kind of awesome
 // number of bytes in a frame
@@ -44,7 +44,7 @@ struct Signal {
 // every packet is made up of a sequence number
 // the number of signals, and the signals themselves
 struct Packet {
-    uint8_t sequence_number;
+    uint16_t sequence_number;
     uint8_t signal_count;
     std::array<Signal, MAX_SIGNALS> signals;
 

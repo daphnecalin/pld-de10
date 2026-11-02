@@ -1,7 +1,7 @@
 #include "packet.h"
 
 namespace packet {
-    std::optional<Packet> parse(const Frame& frame) {
+    std::optional<Packet> Packet::parse(const Frame& frame) {
         // check start marker and protocol version
         if(frame[0] != 0xA5 || frame[1] != PROTOCOL_VER)
             return std::nullopt;
@@ -17,7 +17,7 @@ namespace packet {
         Packet p{};
         p.sequence_number = frame[2] | (frame[3] << 8);
 
-        uint8_t offset = 4;
+        size_t offset = 4;
         // make sure we don't exceed max signal count
         // and that offset stays within frame_bytes
         while(p.signal_count < MAX_SIGNALS && offset + 2 < FRAME_BYTES - 1) {
