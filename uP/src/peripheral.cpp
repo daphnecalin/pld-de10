@@ -3,8 +3,8 @@
 #include "pico/binary_info.h"
 #include "pico/stdlib.h"
 
-#include "../libraries/pico-ssd1306/ssd1306.h"
-#include "../libraries/pico-ssd1306/textRenderer/TextRenderer.h"
+#include "ssd1306.h"
+#include "textRenderer/TextRenderer.h"
 #include <pico/time.h>
 
 void drawText5x8(const char *text, pico_ssd1306::SSD1306 display) {

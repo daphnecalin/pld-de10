@@ -9,8 +9,8 @@
 
 #define DEBOUNCE_TIME_US 40000
 
-#include "../libraries/pico-ssd1306/ssd1306.h"
-#include "../libraries/pico-ssd1306/textRenderer/TextRenderer.h"
+#include "ssd1306.h"
+#include "textRenderer/TextRenderer.h"
 
 // more docs: https://ssd1306.harbys.me/
 
