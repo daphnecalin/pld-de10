@@ -1,0 +1,35 @@
+@page
+@model IndexModel
+@{ ViewData["Title"] = Model.All ? "TA submissions" : "My submissions"; }
+<h1>@ViewData["Title"]</h1>
+<p class="muted">Welcome, @Model.AccountName. Review processing results and download your instrumentation.</p>
+<nav class="tabs"><a asp-page="/Index">My submissions</a>
+@if (User.IsInRole("TA")) { <a asp-page="/Index" asp-route-all="true">TA · All submissions</a> }
+</nav>
+<section>
+    <h2>Submit a project</h2>
+    <p class="muted">Include the .qpf, .qsf and referenced .bdf/.v/.sv/.bsf sources. Exclude db/, incremental_db/ and compiled output. Maximum ZIP size: 20 MB. Quartus is not required on the server.</p>
+    <div asp-validation-summary="All" class="message" role="alert"></div>
+    <form method="post" enctype="multipart/form-data">
+        <label asp-for="ProjectZip">Project ZIP</label><input asp-for="ProjectZip" type="file" accept=".zip" required />
+        <div class="actions"><button type="submit">Process project</button></div>
+    </form>
+    <p class="muted">Processing finishes before the results page opens.</p>
+</section>
+<section>
+    <h2>@ViewData["Title"]</h2>
+    <a asp-page="/Index" asp-route-all="@Model.All">Refresh submissions</a>
+    @if (Model.Items.Count == 0) { <p class="muted">No submissions yet.</p> }
+    else
+    {
+        <div class="table-wrap"><table><thead><tr><th>Student</th><th>Submitted (UTC)</th><th>Top level</th><th>Status</th><th>Details</th></tr></thead><tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr><td>@(item.StudentName ?? "Legacy submission")<br /><small>@item.Student</small></td>
+                <td>@item.UploadedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td><td>@item.TopLevel</td>
+                <td><span class="badge @(item.Status == "Complete" ? "complete" : "")">@item.Status</span></td>
+                <td><a asp-page="/Details" asp-route-id="@item.Id">View details</a></td></tr>
+        }
+        </tbody></table></div>
+    }
+</section>

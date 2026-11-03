@@ -23,7 +23,7 @@ The `.qsf` must include `TOP_LEVEL_ENTITY` and a `BDF_FILE` assignment for **eac
 ## Run on Windows
 
 1. Install [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
-2. Extract the ZIP, open PowerShell inside `QuartusDebugger`.
+2. Open PowerShell at the repository root (containing `QuartusDebugger.Web`).
 3. Run tests:
 
 ```powershell
@@ -33,10 +33,12 @@ dotnet run --project .\QuartusDebugger.Tests
 4. Start the website:
 
 ```powershell
-dotnet run --project .\QuartusDebugger.Web --urls http://localhost:5080
+dotnet run --project .\QuartusDebugger.Web --launch-profile local
 ```
 
-5. Open `http://localhost:5080`, enter a student ID, select source ZIP and upload. The TA table gives downloadable files per submission.
+5. Open `http://localhost:5080`, create an account, and sign in. Select a source
+   ZIP and upload. Students see their own submissions; manually assigned TAs can
+   also view all submissions. Upload ownership comes from the signed-in account.
 
 To run CLI against your own source ZIP:
 
@@ -49,6 +51,12 @@ To try included source HDL example:
 ```powershell
 dotnet run --project .\QuartusDebugger.Cli -- .\samples\demo.zip .\output
 ```
+
+To test TA access, register that account first, stop the server, then substitute its ID here:
+```powershell
+dotnet run --project QuartusDebugger.Web --launch-profile local -- --set-ta 12345678
+```
+Restart the server and sign in again. There should be a TA submissions view.
 
 ## What the direct BDF analyzer supports
 
@@ -79,16 +87,22 @@ dotnet run --project .\QuartusDebugger.Cli -- .\samples\demo.zip .\output
 - `.bdf` hierarchy is resolved by matching symbol type to `.bdf` filename. Custom `.bsf` hierarchy resolution and mixed BDF/HDL submodule traversal are not implemented.
 - Only direct QSF assignment lines and simple BDF naming patterns are supported; the tool fails on unsupported names rather than producing an incorrect width. The parser does not validate electrical connectivity or prove a net is synthesizable.
 - `debug_ip.sv` is an **unwired interface**. The fact that `debug_map.hpp` describes `top.u0.internal` does not make it accessible from the top without adding instrumentation/wiring. The outputs are metadata and a probe-packing module, not a drop-in working hardware trace design.
-- Uploaded source is untrusted; the starter site has no authentication, per-user authorization, request throttling, job queue, or production isolation. Do not deploy publicly until these are added.
+- Accounts, owner/TA authorization, CSRF checks, and basic request throttling are
+  implemented for local testing. Durable hosted storage, a processing queue,
+  account recovery/verification, and deployment isolation remain future work.
 - For mixed .bdf/.sv designs with a BDF top, the direct analyzer does not yet recurse into HDL-only child instances.
 
 ## Architecture
 
-`QuartusDebugger.Web`: ASP.NET Core minimal API + static HTML student/TA interface.
+`QuartusDebugger.Web`: ASP.NET Core Razor Pages (C#, HTML, CSS; no JavaScript),
+Identity accounts, and protected submission/download APIs.
 
 `QuartusDebugger.Core`: safe archive extraction, QPF/QSF lookup, direct BDF analyzer, basic Verilog hierarchy analyzer, debug IP + C++ map generator.
 
 `QuartusDebugger.Tests`: checks generator, HDL hierarchy, BDF hierarchy, and ZIP path validation.
+
+`QuartusDebugger.AccountTests`: C# HTTP/form integration checks for accounts,
+student ownership, TA roles, and permission enforcement.
 
 `QuartusDebugger.Cli`: local command-line inspection.
 

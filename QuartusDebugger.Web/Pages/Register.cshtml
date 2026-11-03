@@ -1,0 +1,17 @@
+@page
+@model RegisterModel
+@{ ViewData["Title"] = "Create account"; }
+<section>
+    <h1>Create an account</h1>
+    <p class="note">All new accounts have student access.</p>
+    <div asp-validation-summary="All" class="message" role="alert"></div>
+    <form method="post">
+        <label asp-for="FirstName">First name</label><input asp-for="FirstName" maxlength="80" autocomplete="given-name" required />
+        <label asp-for="LastName">Last name</label><input asp-for="LastName" maxlength="80" autocomplete="family-name" required />
+        <label asp-for="StudentId">Student ID</label><input asp-for="StudentId" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="username" required />
+        <label asp-for="Password">Password</label><input asp-for="Password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required />
+        <small class="muted">At least 10 characters, including a lowercase letter and a digit.</small>
+        <label asp-for="ConfirmPassword">Confirm password</label><input asp-for="ConfirmPassword" type="password" minlength="10" maxlength="128" autocomplete="new-password" required />
+        <div class="actions"><button type="submit">Create account</button><a asp-page="/Login">Back to sign in</a></div>
+    </form>
+</section>

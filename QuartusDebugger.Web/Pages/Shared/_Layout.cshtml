@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] · PLD Workspace</title>
+    <link rel="stylesheet" href="~/site.css" asp-append-version="true" />
+</head>
+<body>
+<header>
+    <div><strong>PLD WORKSPACE</strong><small>Portable Logic Debugger</small></div>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <div class="session">
+            <span>@User.Identity.Name @(User.IsInRole("TA") ? " · TA" : "")</span>
+            <form method="post" asp-page="/Logout"><button type="submit">Sign out</button></form>
+        </div>
+    }
+</header>
+<main>@RenderBody()</main>
+</body>
+</html>

@@ -1,6 +1,13 @@
 /QuartusDebugger.Core/bin/
 /QuartusDebugger.Core/obj/
+
 /QuartusDebugger.Tests/bin/
 /QuartusDebugger.Tests/obj/
+
 /QuartusDebugger.Web/bin/
 /QuartusDebugger.Web/obj/
+/QuartusDebugger.Web/App_Data/
+/QuartusDebugger.Web/submissions/
+
+/QuartusDebugger.AccountTests/bin/
+/QuartusDebugger.AccountTests/obj/

@@ -1,0 +1,19 @@
+@page "{id}"
+@model DetailsModel
+@{ ViewData["Title"] = "Submission details"; }
+<section>
+    <h1>Submission details</h1>
+    <p>@(Model.Item.StudentName ?? "Legacy submission") · @Model.Item.Student</p>
+    <p><span class="badge">@Model.Item.Status</span> · @Model.Item.UploadedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</p>
+    <p>Top level: @Model.Item.TopLevel · @Model.Item.Signals signals · @Model.Item.Bits probe bits</p>
+    @if (!string.IsNullOrEmpty(Model.Item.Error)) { <p class="error-detail">@Model.Item.Error</p> }
+    <div class="downloads">
+    @foreach (var name in Model.Downloads)
+    {
+        <a href="/api/submissions/@Model.Item.Id/@name">@name</a>
+    }
+    </div>
+    <p class="muted">Generated debug interfaces still require signal wiring in your FPGA project.</p>
+    <a asp-page="/Index">Back to my submissions</a>
+    @if (User.IsInRole("TA")) { <a asp-page="/Index" asp-route-all="true">Back to all submissions</a> }
+</section>

@@ -1,80 +1,39 @@
-using System.Collections.Concurrent;
-using QuartusDebugger.Core;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Identity;
+using QuartusDebugger.Web;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseWebRoot("wwwroot");
+AccountEndpoints.Configure(builder);
+builder.Services.AddRazorPages(options => options.Conventions.AuthorizeFolder("/")
+    .AllowAnonymousToPage("/Login").AllowAnonymousToPage("/Register"));
+builder.Services.AddSingleton<SubmissionStore>();
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 21L * 1024 * 1024);
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
-    options.MultipartBodyLengthLimit = 256L * 1024 * 1024);
+    options.MultipartBodyLengthLimit = 21L * 1024 * 1024);
 var app = builder.Build();
-app.UseDefaultFiles();
+if (await AccountEndpoints.InitializeAsync(app, args)) return;
 app.UseStaticFiles();
+AccountEndpoints.MapAccounts(app);
+app.MapRazorPages();
 
-var storeRoot = Path.Combine(app.Environment.ContentRootPath, "submissions");
-Directory.CreateDirectory(storeRoot);
-var jobs = new ConcurrentDictionary<string, Submission>();
-foreach (var folder in Directory.GetDirectories(storeRoot))
+app.MapGet("/api/submissions", (ClaimsPrincipal user, SubmissionStore store) => Results.Ok(store.List(user)))
+    .RequireAuthorization();
+app.MapGet("/api/ta/submissions", (ClaimsPrincipal user, SubmissionStore store) => Results.Ok(store.List(user, all: true)))
+    .RequireAuthorization(policy => policy.RequireRole("TA"));
+app.MapGet("/api/submissions/{id}", (string id, ClaimsPrincipal user, SubmissionStore store) =>
+    store.Find(id, user) is { } item ? Results.Ok(item) : Results.NotFound()).RequireAuthorization();
+app.MapPost("/api/submissions", async (HttpRequest request, ClaimsPrincipal principal,
+    UserManager<StudentAccount> users, SubmissionStore store, CancellationToken ct) =>
 {
-    string metadata = Path.Combine(folder, "submission.json");
-    if (!File.Exists(metadata)) continue;
-    try
-    {
-        var item = System.Text.Json.JsonSerializer.Deserialize<Submission>(File.ReadAllText(metadata));
-        if (item != null) jobs[item.Id] = item;
-    }
-    catch { }
-}
-
-app.MapGet("/api/submissions", () => Results.Ok(jobs.Values.OrderByDescending(x => x.UploadedAt)));
-
-app.MapPost("/api/submissions", async (HttpRequest request, CancellationToken ct) =>
-{
+    var user = await users.GetUserAsync(principal);
+    if (user == null) return Results.Unauthorized();
     if (!request.HasFormContentType) return Results.BadRequest(new { error = "Use multipart/form-data." });
-    var form = await request.ReadFormAsync(ct);
-    var file = form.Files.GetFile("file");
-    var student = form["student"].ToString().Trim();
-    if (string.IsNullOrWhiteSpace(student) || student.Length > 120)
-        return Results.BadRequest(new { error = "Student identifier is required (max 120 characters)." });
-    if (file is null || !file.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-        return Results.BadRequest(new { error = "Upload a .zip containing the Quartus project source files." });
-    if (file.Length == 0 || file.Length > 256L * 1024 * 1024)
-        return Results.BadRequest(new { error = "ZIP must be between 1 byte and 256 MB." });
-
-    var id = Guid.NewGuid().ToString("N");
-    var folder = Path.Combine(storeRoot, id);
-    Directory.CreateDirectory(folder);
-    var item = new Submission(id, student, DateTimeOffset.UtcNow, "Processing", 0, 0, "", "");
-    jobs[id] = item;
-    Save(item);
-    try
-    {
-        await using var stream = file.OpenReadStream();
-        var result = await new QuartusProcessingService().ProcessAsync(stream, ct);
-        await File.WriteAllTextAsync(Path.Combine(folder, "debug_ip.sv"), result.Verilog, ct);
-        await File.WriteAllTextAsync(Path.Combine(folder, "debug_map.hpp"), result.CppHeader, ct);
-        item = item with { Status = "Complete", Signals = result.SignalCount, Bits = result.TotalBits, TopLevel = result.TopLevel };
-    }
-    catch (Exception e) when (e is InvalidDataException or NotSupportedException or FileNotFoundException or IOException)
-    {
-        item = item with { Status = "Failed", Error = e.Message };
-    }
-    jobs[id] = item;
-    Save(item);
-    return Results.Ok(item);
-});
-
-app.MapGet("/api/submissions/{id}/{name}", (string id, string name) =>
-{
-    if (!jobs.TryGetValue(id, out var item) || item.Status != "Complete") return Results.NotFound();
-    if (name is not ("debug_ip.sv" or "debug_map.hpp")) return Results.NotFound();
-    var file = Path.Combine(storeRoot, id, name);
-    if (!File.Exists(file)) return Results.NotFound();
-    return Results.File(file, "application/octet-stream", name);
-});
-
+    var file = (await request.ReadFormAsync(ct)).Files.GetFile("file");
+    if (file == null) return Results.BadRequest(new { error = "Choose a project ZIP." });
+    try { return Results.Ok(await store.UploadAsync(file, user, ct)); }
+    catch (InvalidDataException error) { return Results.BadRequest(new { error = error.Message }); }
+}).RequireAuthorization().RequireRateLimiting("uploads");
+app.MapGet("/api/submissions/{id}/{name}", (string id, string name, ClaimsPrincipal user, SubmissionStore store) =>
+    store.DownloadPath(id, name, user) is { } path
+        ? Results.File(path, "application/octet-stream", name) : Results.NotFound()).RequireAuthorization();
 app.Run();
-
-void Save(Submission s) => File.WriteAllText(Path.Combine(storeRoot, s.Id, "submission.json"),
-    System.Text.Json.JsonSerializer.Serialize(s));
-
-public sealed record Submission(string Id, string Student, DateTimeOffset UploadedAt, string Status,
-    int Signals, int Bits, string TopLevel, string Error);

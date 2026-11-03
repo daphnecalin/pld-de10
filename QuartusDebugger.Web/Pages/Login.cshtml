@@ -1,0 +1,19 @@
+@page
+@model LoginModel
+@{ ViewData["Title"] = "Sign in"; }
+<div class="intro">
+    <h1>Your circuit. Your workspace.</h1>
+    <p class="muted">Sign in to submit a Quartus source project and download its debug interface and signal map.</p>
+</div>
+<section>
+    <h2>Welcome back</h2>
+    @if (TempData["Message"] is string message) { <p role="status">@message</p> }
+    <div asp-validation-summary="All" class="message" role="alert"></div>
+    <form method="post">
+        <label asp-for="StudentId">Student ID</label>
+        <input asp-for="StudentId" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="username" required />
+        <label asp-for="Password">Password</label>
+        <input asp-for="Password" type="password" maxlength="128" autocomplete="current-password" required />
+        <div class="actions"><button type="submit">Sign in</button><a asp-page="/Register">Create an account</a></div>
+    </form>
+</section>
