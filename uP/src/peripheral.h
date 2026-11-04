@@ -8,13 +8,12 @@
 #define I2C_PIN_SDA PICO_DEFAULT_I2C_SDA_PIN
 #define I2C_PIN_SCL PICO_DEFAULT_I2C_SCL_PIN
 
-#define BUTTON_UP_PIN 10
-#define BUTTON_DOWN_PIN 9
-#define BUTTON_RIGHT_PIN 6
-#define BUTTON_LEFT_PIN 5
+
+enum button_id { BTN_DOWN, BTN_UP, BTN_LEFT, BTN_RIGHT, BTN_COUNT };
 
 int button_init(void);
-void drawText5x8(const char *text, pico_ssd1306::SSD1306 display);
+bool button_pressed(int id);
+void drawText5x8(const char *text, pico_ssd1306::SSD1306 *display);
 int peripheral_init(void);
 
 #endif
