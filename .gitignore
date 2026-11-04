@@ -1,4 +1,10 @@
+__pycache__/
+/demo_sem_one/tb/generated
+# Generated handoff files only
+/uP/test/generated/*
+build/
 /uP/build/
+/uP/build-test
 /uP/build.sh
 /build/
 /.vscode/
