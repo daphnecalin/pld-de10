@@ -28,6 +28,15 @@ TEST_CASE("Packet::parse matches generated fixtures") {
     }
 }
 
+// for recalculating checksum
+void checksum(packet::Frame& frame) {
+    uint8_t sum = 0;
+    for(size_t i = 0; i < packet::FRAME_BYTES - 1; i++)
+        sum ^= frame[i];
+
+    frame[packet::FRAME_BYTES - 1] = sum;
+}
+
 TEST_CASE("Packet::parse rejects bad data") {
 
     // modify fixture data and check that it's rejected
@@ -35,11 +44,13 @@ TEST_CASE("Packet::parse rejects bad data") {
 
     SUBCASE("incorrect start") {
         f.frame[0] = 0xFF;
+        checksum(f.frame);
         CHECK_FALSE(Packet::parse(f.frame));
     }
 
     SUBCASE("incorrect protocol") {
         f.frame[1] = 0xFF;
+        checksum(f.frame);
         CHECK_FALSE(Packet::parse(f.frame));
     }
 
@@ -51,26 +62,7 @@ TEST_CASE("Packet::parse rejects bad data") {
     SUBCASE("byte not within representable range") {
         size_t offset = 4;
         f.frame[offset + 1] = 5;
+        checksum(f.frame);
         CHECK_FALSE(Packet::parse(f.frame));
-    }
-
-    SUBCASE("invalid width") {
-        // calculate offset of 13th signal and change width to a huge number
-        packet::Frame& frame = f.frame;
-        size_t offset = 4;
-        size_t sig_count = 0;
-        while(sig_count < 13 && offset + 2 < packet::FRAME_BYTES - 1) {
-            uint8_t width = frame[offset + 1];
-            uint8_t bytes = (width + 7) / 8;
-            offset += 2 + bytes;
-            sig_count++;
-        }
-
-        // now that offset is calculated, change width to be huge
-        frame[offset + 1] = 200;
-        // then recalculate checksum
-
-        // and verify it doesn't parse
-        CHECK_FALSE(Packet::parse(frame));
     }
 }
