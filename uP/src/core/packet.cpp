@@ -3,7 +3,7 @@
 namespace packet {
     std::optional<Packet> Packet::parse(const Frame& frame) {
         // check start marker and protocol version
-        if(frame[0] != 0xA5 || frame[1] != PROTOCOL_VER)
+        if(frame[0] != START_MARKER || frame[1] != PROTOCOL_VER)
             return std::nullopt;
 
         // check checksum
