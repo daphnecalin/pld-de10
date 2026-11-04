@@ -3,17 +3,22 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-// Real HTTP + Razor form tests, with a disposable account database and uploads.
-string root = Path.GetFullPath(args.FirstOrDefault() ?? Directory.GetCurrentDirectory());
+// These tests create accounts and an upload in the configured Supabase project.
+if (args.FirstOrDefault() != "--supabase-test")
+{
+    Console.Error.WriteLine("Rerun with -- --supabase-test to create test accounts and a submission in the configured Supabase project.");
+    Environment.ExitCode = 2;
+    return;
+}
+string root = Path.GetFullPath(args.Skip(1).FirstOrDefault() ?? Directory.GetCurrentDirectory());
 string web = Path.Combine(root, "QuartusDebugger.Web");
 string dll = Path.Combine(web, "bin", "Debug", "net8.0", "QuartusDebugger.Web.dll");
 if (!File.Exists(dll)) throw new Exception("Build QuartusDebugger.Web first and run this test from the repository root.");
-string temp = Path.Combine(root, "QuartusDebugger.AccountTests", "bin", "smoke-" + Guid.NewGuid().ToString("N"));
-Directory.CreateDirectory(temp);
 var listener = new TcpListener(IPAddress.Loopback, 0);
 listener.Start();
 int port = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -23,6 +28,8 @@ int passed = 0;
 Process? server = null;
 var logs = new StringBuilder();
 string password = "test-" + Guid.NewGuid().ToString("N");
+string prefix = $"0{RandomNumberGenerator.GetInt32(10000, 100000)}";
+string aliceId = prefix + "01", bobId = prefix + "02", taId = prefix + "03", unusedId = prefix + "04";
 
 void Check(bool condition, string label)
 {
@@ -38,7 +45,6 @@ ProcessStartInfo Info(params string[] commandArgs)
     foreach (string arg in commandArgs) info.ArgumentList.Add(arg);
     info.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
     info.Environment["ASPNETCORE_URLS"] = url;
-    info.Environment["Storage__Root"] = temp;
     info.Environment["Logging__LogLevel__Default"] = "Warning";
     return info;
 }
@@ -71,9 +77,9 @@ void Stop()
     if (server is { HasExited: false }) { server.Kill(entireProcessTree: true); server.WaitForExit(); }
     server?.Dispose(); server = null;
 }
-async Task Role(string command)
+async Task Operator(string command, params string[] arguments)
 {
-    using var process = Process.Start(Info(command, "33333333"))!;
+    using var process = Process.Start(Info([command, .. arguments]))!;
     var output = process.StandardOutput.ReadToEndAsync();
     var errors = process.StandardError.ReadToEndAsync();
     await process.WaitForExitAsync();
@@ -104,11 +110,6 @@ async Task<FormUrlEncodedContent> Form(HttpClient client, string page, Dictionar
 }
 try
 {
-    string legacy = Path.Combine(temp, "submissions", "legacy");
-    Directory.CreateDirectory(legacy);
-    await File.WriteAllTextAsync(Path.Combine(legacy, "submission.json"),
-        """{"Id":"legacy","Student":"11111111","UploadedAt":"2026-01-01T00:00:00Z","Status":"Complete","Signals":1,"Bits":1,"TopLevel":"legacy","Error":""}""");
-    await File.WriteAllTextAsync(Path.Combine(legacy, "debug_map.hpp"), "// fixture");
     await Start();
     using var anonymous = Client(); using var alice = Client(); using var bob = Client(); using var ta = Client();
     Check((await anonymous.GetAsync("/")).StatusCode == HttpStatusCode.Redirect, "Anonymous page redirects to sign in");
@@ -118,16 +119,18 @@ try
     Check(!loginHtml.Contains("<script", StringComparison.OrdinalIgnoreCase), "Login renders without JavaScript");
     Check((await anonymous.GetAsync("/Login")).Headers.GetValues("Content-Security-Policy")
         .Any(value => value.Contains("script-src 'none'")), "Browser policy explicitly disables JavaScript");
-    var registration = new Dictionary<string, string> { ["StudentId"] = "11111111", ["FirstName"] = "Demo",
+    var registration = new Dictionary<string, string> { ["StudentId"] = aliceId, ["FirstName"] = "Demo",
         ["LastName"] = "Alice", ["Password"] = password, ["ConfirmPassword"] = password, ["Role"] = "TA" };
     var registered = await alice.PostAsync("/Register", await Form(alice, "/Register", registration));
     Check(registered.StatusCode == HttpStatusCode.Redirect, "HTML registration form succeeds without JavaScript");
     var signedIn = await alice.PostAsync("/Login", await Form(alice, "/Login",
-        new() { ["StudentId"] = "11111111", ["Password"] = password }));
+        new() { ["StudentId"] = aliceId, ["Password"] = password }));
     Check(signedIn.StatusCode == HttpStatusCode.Redirect, "HTML login form succeeds without JavaScript");
     Check(signedIn.Headers.GetValues("Set-Cookie").Any(cookie => cookie.Contains("httponly", StringComparison.OrdinalIgnoreCase)), "Login uses an HttpOnly cookie");
-    Check((await Json(await alice.GetAsync("/api/auth/me")))["isTA"]!.GetValue<bool>() == false, "Registration cannot assign TA access");
-    foreach (var (client, id) in new[] { (bob, "22222222"), (ta, "33333333") })
+    var account = await Json(await alice.GetAsync("/api/auth/me"));
+    Check(account["isTA"]!.GetValue<bool>() == false, "Registration cannot assign TA access");
+    Check(account["studentId"]!.GetValue<string>() == aliceId, "Leading zeros in IDs survive registration and login");
+    foreach (var (client, id) in new[] { (bob, bobId), (ta, taId) })
     {
         await Token(client);
         var response = await client.PostAsJsonAsync("/api/auth/register", new { studentId = id, firstName = "Demo",
@@ -137,24 +140,18 @@ try
     await Token(anonymous);
     foreach (var (student, secret, confirmation, label) in new[]
     {
-        ("11111111", password, password, "Duplicate student IDs are rejected"),
+        (aliceId, password, password, "Duplicate student IDs are rejected"),
         ("1234567", password, password, "Student IDs must contain exactly eight digits"),
-        ("44444444", "short1", "short1", "Weak passwords are rejected"),
-        ("44444444", password, "different", "Password confirmation must match")
+        (unusedId, "short1", "short1", "Weak passwords are rejected"),
+        (unusedId, password, "different", "Password confirmation must match")
     })
     {
         var rejected = await anonymous.PostAsJsonAsync("/api/auth/register", new { studentId = student,
             firstName = "Demo", lastName = "Student", password = secret, confirmPassword = confirmation });
         Check(rejected.StatusCode == HttpStatusCode.BadRequest, label);
     }
-    var zeroAccount = await anonymous.PostAsJsonAsync("/api/auth/register", new { studentId = "00001234",
-        firstName = "Leading", lastName = "Zero", password, confirmPassword = password });
-    Check(zeroAccount.IsSuccessStatusCode && await Login(anonymous, "00001234") &&
-        (await Json(await anonymous.GetAsync("/api/auth/me")))["studentId"]!.GetValue<string>() == "00001234",
-        "Leading zeros in IDs survive registration and login");
     Check((await alice.GetAsync("/?all=true")).StatusCode == HttpStatusCode.Forbidden, "Student cannot open TA page mode");
     Check((await alice.GetAsync("/api/ta/submissions")).StatusCode == HttpStatusCode.Forbidden, "Student cannot list TA API data");
-    Check((await alice.GetAsync("/Details/legacy")).StatusCode == HttpStatusCode.NotFound, "Typed ID does not claim legacy submissions");
     Check((await alice.PostAsync("/Logout", new FormUrlEncodedContent(new Dictionary<string, string>()))).StatusCode == HttpStatusCode.BadRequest,
         "HTML mutation rejects missing CSRF token");
 
@@ -171,7 +168,7 @@ try
     }
     using var upload = new MultipartFormDataContent();
     upload.Add(new StringContent(WebUtility.HtmlDecode(tokenMatch.Groups[1].Value)), "__RequestVerificationToken");
-    upload.Add(new StringContent("22222222"), "student");
+    upload.Add(new StringContent(bobId), "student");
     upload.Add(new ByteArrayContent(memory.ToArray()), "ProjectZip", "source.zip");
     var uploaded = await alice.PostAsync("/", upload);
     Check(uploaded.StatusCode == HttpStatusCode.Redirect && uploaded.Headers.Location!.ToString().StartsWith("/Details/"),
@@ -179,7 +176,7 @@ try
     string detailsPath = uploaded.Headers.Location!.ToString();
     string idValue = detailsPath.Split('/').Last();
     var item = await Json(await alice.GetAsync("/api/submissions/" + idValue));
-    Check(item["status"]!.GetValue<string>() == "Complete" && item["student"]!.GetValue<string>() == "11111111",
+    Check(item["status"]!.GetValue<string>() == "Complete" && item["student"]!.GetValue<string>() == aliceId,
         "Processed upload belongs to authenticated user despite forged student field");
     Check((await Json(await alice.GetAsync("/api/submissions"))).AsArray().Count == 1, "Student sees own submission");
     Check((await Json(await bob.GetAsync("/api/submissions"))).AsArray().Count == 0, "Other student sees no unrelated submissions");
@@ -189,18 +186,18 @@ try
         Check((await alice.GetAsync($"/api/submissions/{idValue}/{name}")).IsSuccessStatusCode, "Owner can download " + name);
         Check((await bob.GetAsync($"/api/submissions/{idValue}/{name}")).StatusCode == HttpStatusCode.NotFound, "Other student cannot download " + name);
     }
-    Stop(); await Role("--set-ta"); await Start();
-    Check(await Login(alice, "11111111"), "Account persists after restart");
+    Stop(); await Operator("--set-ta", taId); await Start();
+    Check(await Login(alice, aliceId), "Account persists after restart");
     Check((await Json(await alice.GetAsync("/api/submissions"))).AsArray().Count == 1, "Ownership persists after restart");
-    Check(await Login(ta, "33333333") && (await Json(await ta.GetAsync("/api/auth/me")))["isTA"]!.GetValue<bool>(), "TA assignment takes effect at login");
+    Check(await Login(ta, taId) && (await Json(await ta.GetAsync("/api/auth/me")))["isTA"]!.GetValue<bool>(), "TA assignment takes effect at login");
     Check((await ta.GetAsync("/?all=true")).IsSuccessStatusCode, "TA can open all-submissions page");
-    Check((await Json(await ta.GetAsync("/api/ta/submissions"))).AsArray().Count == 2, "TA can list owned and legacy submissions");
+    Check((await Json(await ta.GetAsync("/api/ta/submissions"))).AsArray().Any(row => row?["id"]?.GetValue<string>() == idValue),
+        "TA list includes another student's submission");
     Check((await ta.GetAsync(detailsPath)).IsSuccessStatusCode, "TA can open student details");
     Check((await ta.GetAsync($"/api/submissions/{idValue}/source.zip")).IsSuccessStatusCode, "TA can download student source ZIP");
-    Check((await ta.GetAsync("/api/submissions/legacy/debug_map.hpp")).IsSuccessStatusCode, "TA can review legacy output");
-    Stop(); await Role("--remove-ta"); await Start();
+    Stop(); await Operator("--remove-ta", taId); await Start();
     Check((await ta.GetAsync("/api/auth/me")).StatusCode == HttpStatusCode.Unauthorized, "Role change invalidates existing session");
-    Check(await Login(ta, "33333333") && (await ta.GetAsync("/api/ta/submissions")).StatusCode == HttpStatusCode.Forbidden,
+    Check(await Login(ta, taId) && (await ta.GetAsync("/api/ta/submissions")).StatusCode == HttpStatusCode.Forbidden,
         "Removed TA signs in with student permissions");
     alice.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
     var logout = await alice.PostAsync("/Logout", await Form(alice, "/", new()));
@@ -208,13 +205,11 @@ try
         "HTML logout ends access without JavaScript");
     await Token(bob);
     for (int attempt = 0; attempt < 5; attempt++)
-        await bob.PostAsJsonAsync("/api/auth/login", new { studentId = "22222222", password = "incorrect-password1" });
-    Check(!await Login(bob, "22222222"), "Five failed passwords lock the account even for a subsequent correct password");
+        await bob.PostAsJsonAsync("/api/auth/login", new { studentId = bobId, password = "incorrect-password1" });
+    Check(!await Login(bob, bobId), "Five failed passwords lock the account even for a subsequent correct password");
     Console.WriteLine($"ALL {passed} ACCOUNT CHECKS PASSED");
 }
 finally
 {
     Stop();
-    // Only remove this test's uniquely created directory under AccountTests/bin.
-    Directory.Delete(temp, recursive: true);
 }

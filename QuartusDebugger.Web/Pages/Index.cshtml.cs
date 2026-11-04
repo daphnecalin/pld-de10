@@ -19,7 +19,7 @@ public sealed class IndexModel(SubmissionStore store, UserManager<StudentAccount
         All = all;
         var user = await users.GetUserAsync(User);
         AccountName = user == null ? "" : $"{user.FirstName} {user.LastName}";
-        Items = store.List(User, all).ToList();
+        Items = await store.ListAsync(User, all, HttpContext.RequestAborted);
         return Page();
     }
 

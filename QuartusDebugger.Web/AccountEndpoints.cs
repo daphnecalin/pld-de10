@@ -2,10 +2,8 @@ using System.Security.Claims;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Antiforgery;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 
 namespace QuartusDebugger.Web;
 
@@ -13,13 +11,7 @@ public static class AccountEndpoints
 {
     public static void Configure(WebApplicationBuilder builder)
     {
-        string root = Path.GetFullPath(builder.Configuration["Storage:Root"] ?? builder.Environment.ContentRootPath);
-        string accounts = Path.Combine(root, "App_Data");
-        Directory.CreateDirectory(accounts);
-        builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(accounts, "keys")))
-            .SetApplicationName("QuartusDebugger");
-        builder.Services.AddDbContext<AccountDb>(options => options.UseSqlite(
-            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = Path.Combine(accounts, "accounts.db") }.ToString()));
+        Persistence.Configure(builder);
         builder.Services.AddIdentity<StudentAccount, IdentityRole>(options =>
         {
             options.Password.RequiredLength = 10;
@@ -66,7 +58,8 @@ public static class AccountEndpoints
     public static async Task<bool> InitializeAsync(WebApplication app, string[] args)
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<AccountDb>().Database.EnsureCreatedAsync();
+        if (args.FirstOrDefault() is not ("--set-ta" or "--remove-ta"))
+            await scope.ServiceProvider.GetRequiredService<SubmissionFiles>().CheckPrivateBucketAsync();
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
         if (!await roles.RoleExistsAsync("TA"))
         {
