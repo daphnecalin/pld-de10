@@ -2,59 +2,45 @@
 
 ## Goal architecture
 
-This project is a hardware lab debugging platform where a student submits a sample lab package through a website, receives the generated C header and debug metadata, and then copies that output into their own code to run tests and pull signal data from the FPGA.
+For each lab, we will have a ready-made debug IP that the student connects to their design and makes the top level of the project. The student does not need to change the firmware; the uP software still handles the SPI transaction, packet validation, and display updates, while the debug IP is the part that changes for each lab.
 
-The current system is not the final universal lab platform yet; it is the working proof-of-concept that establishes the key flow: website output, embedded execution, FPGA signal capture, and SPI-based debug transfer. The current sample lab used for this flow is DLOG Lab4_RALU, which serves as the reference design for generating the debug header and validating the signal packet.
+The sample lab right now is DLOG Lab4_RALU. We use it as the reference design to generate the debug packet and check the signal flow.
 
 | System | What it does |
 | --- | --- |
-| FPGA debug IP | Captures named internal signals, builds the debug packet, and exposes the packet to the SPI slave interface |
-| MCU firmware (RP2040) | Initializes the debug transaction, receives the packet over SPI, validates it, and drives the screen/UI |
-| Website | Accepts a student lab submission, generates the C header and debug metadata, and gives the student the files needed for integration |
-| FPGA-to-uP pipeline | Transfers captured signal data from the DE10 to the RP2040 over SPI so the uP can inspect and process it |
+| FPGA debug IP | Captures named internal signals and builds the debug packet for the SPI slave |
+| MCU firmware (RP2040) | Starts the SPI transfer, receives and checks the packet, runs the screen/UI |
+| Website | Takes a lab submission and generates the custom debug IP and C header for that lab |
+| FPGA to uP pipeline | Sends the captured signals from the DE10 to the RP2040 over SPI |
 
-The system is designed around a simple user workflow: a student uploads a sample lab or test bundle to the website, the website produces the generated debug information and C header, the student copies that output into their code, and then the firmware runs tests that read the debug signals and process the returned FPGA data.
+The current workflow is: the lab already has a debug IP, the student connects their design to that IP and makes it the top level, then the uP starts the SPI transaction, checks the packet, and updates the display. The FPGA raises `data_ready`, the RP2040 starts the SPI transaction, and the packet is read back over MISO.
+
+The long-term goal is for a user to upload a Quartus project as a zip file to our website, and the website would generate a custom debug IP and custom C header that maps signal IDs to signal names. There may also be an automated way to load the PLD with that custom configuration, but that still needs to be designed.
 
 ## Current architecture
 
-This is the architecture of the system that is currently working and is the immediate implementation of the project.
+This is what works right now.
 
 ```mermaid
 flowchart TD
-    A["Student submits sample lab
-via website"] --> B["Website generates
-C header and debug info"]
-    B --> C["Student copies generated output
-into code"]
-    C --> D["uP initializes SPI debug transaction"]
-    D --> E["User initiates debug IP"]
-    E --> F["FPGA captures probes
-and builds debug packet"]
-    F --> G["data_ready goes HIGH"]
-    G --> H["uP starts SPI transaction"]
-    H --> I["RP2040 clocks 128 bytes
-with dummy MOSI data"]
-    I --> J["FPGA shifts packet over SPI"]
-    J --> K["SPI RX DMA stores bytes
-in RP2040 SRAM buffer"]
-    K --> L["uP validates packet,
-parses signals, and runs test code"]
-    L --> M["Display updates windows
-and shows debug data"]
+    A["Student connects lab design to debug IP"] --> B["debug IP is the top level project"]
+    B --> C["uP sets up SPI transaction"]
+    C --> D["FPGA captures probes, builds packet"]
+    D --> E["data_ready goes HIGH"]
+    E --> F["uP clocks 128 bytes over SPI"]
+    F --> G["SPI RX DMA stores bytes in SRAM"]
+    G --> H["uP checks packet, parses signals, runs test code"]
+    H --> I["Display shows debug data"]
 ```
 
-The current debug flow starts with the website producing the lab-specific header and debug information for DLOG Lab4_RALU. Once that output has been copied into the student’s code, the uP is responsible for starting the SPI transaction with the FPGA. The FPGA holds the debug packet until the uP requests it, and the `data_ready` flag is used to signal that a new packet is ready to be transferred.
-
-In this architecture, the `data_ready` signal is the trigger for the whole SPI exchange. When the FPGA has captured the current signal state and assembled a valid packet, it asserts `data_ready`. The RP2040 detects that signal, initializes the SPI transaction, clocks the required bytes, and reads the packet back from the FPGA. The FPGA acts as the SPI slave, shifts the packet out on MISO, and the uP receives it, validates the checksum and frame format, and then uses the data for the test and debug logic.
-
-This is the current working model: website generates the lab-specific debug artifacts, the uP initializes the SPI transaction, the FPGA provides the packet over SPI, and the embedded software processes the captured signals and displays them on the device screen.
+The FPGA holds the packet until the uP reads it. When the packet is ready, the FPGA sets `data_ready`. The RP2040 sees it, starts the SPI transfer, and reads the 128 bytes. The FPGA is the SPI slave and sends the packet on MISO. The uP checks the checksum and frame format, then uses the data.
 
 | File | Role |
 | --- | --- |
-| `debug_ip.sv` | Maps internal signals to debug IDs and exposes them to the SPI packet builder |
-| `spi_slave.sv` | Captures signal states, assembles the packet, and performs the SPI slave transfer |
-| `debug_demo.sv` | Connects the logic under test, debug IP, and SPI slave into a working instance |
-| `debug_tb.sv` | Verifies the packet format and checks the full SPI transaction flow |
+| `debug_ip.sv` | Maps internal signals to debug IDs |
+| `spi_slave.sv` | Captures signals, builds the packet, does the SPI transfer |
+| `debug_demo.sv` | Connects the lab design, debug IP, and SPI slave |
+| `debug_tb.sv` | Testbench that checks the packet and a full SPI read |
 
 Packet: 128 bytes, SPI mode 0.
 
@@ -69,64 +55,50 @@ Packet: 128 bytes, SPI mode 0.
 
 ## What works
 
-The current project already verifies the core debugging path that the larger platform depends on.
-
 | Item | Status |
 | --- | --- |
-| Debug IP signal map for internal observation | Working |
-| SPI slave and packet assembly on the FPGA side | Working |
-| Packet format for debug transfer | Working |
-| Testbench validation of a full debug packet | Working |
-| SPI packet framing and byte serialization flow | Working |
-| uP-side packet reception and parsing structure | Working |
-| `data_ready` signal handoff to the SPI transaction | Working |
-| Screen, menu, and button interface for the device UI | Working |
-| Website generation of a sample lab’s debug output and C header | Working conceptually |
-| Student code integration for copied debug header and data | In development |
-| Full test execution from generated outputs | Planned |
-| Multi-window debug UI on the embedded display | Planned |
-
-The key current capability is that the FPGA can produce a debug packet only when the system is ready, and the RP2040 can coordinate the SPI transaction to pull that packet into memory. Once the uP receives the packet, it can check the format, parse the signal data, and use that information to update the screen or run user-defined test logic. This is the actual foundation upon which the full website-to-hardware lab workflow is built.
+| Debug IP signal map | Working |
+| SPI slave and packet building on the FPGA | Working |
+| Packet format | Working |
+| Testbench check of a full packet | Working |
+| SPI packet framing and byte conversion | Working |
+| uP packet receiving and parsing | Working |
+| `data_ready` handoff to the SPI transfer | Working |
+| Screen, menu, and buttons | Working |
+| Website generating the header and debug output for the sample lab | Working, still rough |
+| debug IP generation for a specific lab | Planned |
 
 ## What does not work yet
 
-The working pieces are the low-level hardware signals and packet transfer path, but the end-to-end lab workflow still needs to be connected together more completely.
-
 | Item | Status |
 | --- | --- |
-| Student upload workflow for sample lab submissions | In progress |
-| Automatic generation of C header and debug output from uploaded files | In progress |
-| Copy-and-paste integration of generated code into a testbench or firmware project | In progress |
-| Full execution of student test code against FPGA debug data | Planned |
-| Result processing and pass/fail evaluation pipeline | Planned |
-| Multi-view debugger interface with live signal inspection | Planned |
-| Logic driver flow from uP to DE10 for controlled signal injection | Planned |
-| End-to-end universal lab submission to debug workflow | Planned |
+| Student upload of sample labs | In progress |
+| Generating the C header and debug output from uploaded files | In progress |
+| Putting the generated code into a testbench or firmware project | In progress |
+| Running student test code against FPGA data | Planned |
+| Pass/fail results | Planned |
+| Multi-window debug UI on the display | Planned |
+| Logic driver (uP to DE10, changing signals) | Planned |
+| Upload any lab and get a working debug setup | Planned |
 
-## Future plan
+## What we hope to improve
 
-The future goal is to expand this project from a working debug-transfer pipeline into a general-purpose lab submission platform. In that version, a student uploads a zip file to the website, the website generates the appropriate C header and debug metadata, and the student copies that generated output into their code. The RP2040 then runs the test logic, reads the FPGA signal data, validates the result, and displays the relevant debug information on the screen.
+Right now this only works for one sample lab. We want it to work for many labs. A student would upload a Quartus project as a zip, the website would generate a custom debug IP and matching C header for that specific lab, and the student would connect that debug IP into their design as the top level. The RP2040 would still do the same SPI transaction and signal processing, and then the results would be shown on the screen.
 
-This is the broader long-term vision, but it is separate from the current working architecture. Today, the system is focused on the proven mechanism: `data_ready` triggers the FPGA debug packet, the uP initializes the SPI transaction, the FPGA shifts the packet, and the uP processes the result. The future work is to automate and generalize that workflow so it can support many labs and many student submissions.
-
-## Team responsibilities
-
-| Person | Current role and contributions |
-| --- | --- |
-| Omar | Works on the uP communication path, SPI packet handling, and the low-level data-transfer framework between the FPGA and the embedded software. |
-| Daphne | Leads the embedded display and UI work, including menu flow, screen updates, and user interaction on the RP2040. |
-| Soor | Focuses on the FPGA debug IP, SPI slave implementation, packet structure, and the website-based lab submission workflow. |
-| Lucas | Supports the website and testbench side, including refinement of the lab submission tooling and validation of packet/test flow. |
-
-## Current bugs to fix
-
-These are the small issues we still need to clean up in parts of the system that already work.
+## Bugs
 
 | Bug | Where | Description |
 | --- | --- | --- |
-| `data_ready` timing | FPGA/uP handoff | The packet is mostly correct, but the exact timing between the FPGA asserting `data_ready` and the uP beginning the SPI transaction needs to be made more consistent. |
-| Stale packet handling | Debug pipeline | If a previous packet is still present or the system is not fully reset between reads, the uP can process old data instead of the newest debug state. |
-| Transfer boundary checks | SPI receive path | The RP2040 should be more strict about detecting incomplete or misaligned SPI reads at the end of a transfer. |
-| Display refresh timing | Embedded UI | The screen may briefly lag behind the latest packet data when the UI updates or switches views. |
+| `data_ready` timing | FPGA/uP handoff | Time between the FPGA setting `data_ready` and the uP starting the SPI transfer isn't consistent |
+| Stale packets | Debug pipeline | If the system isn't fully reset between reads, the uP can process an old packet |
+| Transfer boundary checks | SPI receive | The RP2040 doesn't reliably catch incomplete or misaligned reads |
+| Display refresh | UI | The screen can lag behind the latest packet when the view changes |
 
-These are minor compared with the larger missing features, but they are the kinds of bugs that make the working system feel unreliable if left unresolved.
+## Who worked on what
+
+| Person | Worked on |
+| --- | --- |
+| Omar | uP communication, SPI packet handling, FPGA to uP data transfer |
+| Daphne | Screen and UI, menu flow, button input |
+| Soor | Debug IP, SPI slave, packet format, website |
+| Lucas | Website, testbench work |
