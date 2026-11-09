@@ -1,109 +1,104 @@
 # pld-de10
 
-## Debug capture flow
+## Goal architecture
 
-The FPGA samples the RALU debug probes after a rising edge of `lab_clk` and
-holds the resulting packet until the RP2040 reads a complete SPI frame.
+For each lab, we will have a ready-made debug IP that the student connects to their design and makes the top level of the project. The student does not need to change the firmware; the uP software still handles the SPI transaction, packet validation, and display updates, while the debug IP is the part that changes for each lab.
+
+The sample lab right now is DLOG Lab4_RALU. We use it as the reference design to generate the debug packet and check the signal flow.
+
+| System | What it does |
+| --- | --- |
+| FPGA debug IP | Captures named internal signals and builds the debug packet for the SPI slave |
+| MCU firmware (RP2040) | Starts the SPI transfer, receives and checks the packet, runs the screen/UI |
+| Website | Takes a lab submission and generates the custom debug IP and C header for that lab |
+| FPGA to uP pipeline | Sends the captured signals from the DE10 to the RP2040 over SPI |
+
+The current workflow is: the lab already has a debug IP, the student connects their design to that IP and makes it the top level, then the uP starts the SPI transaction, checks the packet, and updates the display. The FPGA raises `data_ready`, the RP2040 starts the SPI transaction, and the packet is read back over MISO.
+
+The long-term goal is for a user to upload a Quartus project as a zip file to our website, and the website would generate a custom debug IP and custom C header that maps signal IDs to signal names. There may also be an automated way to load the PLD with that custom configuration, but that still needs to be designed.
+
+## Current architecture
+
+This is what works right now.
 
 ```mermaid
 flowchart TD
-    A["FPGA captures probes<br/>and builds packet"] --> B["data_ready goes HIGH"]
-    B -->|"GPIO interrupt"| C["RP2040 starts SPI transaction"]
-    C --> D["RP2040 clocks 128 bytes<br/>with dummy MOSI data"]
-    D -->|"SPI MISO"| E["FPGA shifts packet"]
-    E --> F["SPI RX DMA stores bytes<br/>in RP2040 SRAM buffer"]
-    F --> G["Full frame received;<br/>CS goes HIGH"]
-    G --> H["FPGA lowers data_ready"]
-    F --> I["RP2040 validates and<br/>processes packet"]
+    A["Student connects lab design to debug IP"] --> B["debug IP is the top level project"]
+    B --> C["uP sets up SPI transaction"]
+    C --> D["FPGA captures probes, builds packet"]
+    D --> E["data_ready goes HIGH"]
+    E --> F["uP clocks 128 bytes over SPI"]
+    F --> G["SPI RX DMA stores bytes in SRAM"]
+    G --> H["uP checks packet, parses signals, runs test code"]
+    H --> I["Display shows debug data"]
 ```
 
-### Step by step
+The FPGA holds the packet until the uP reads it. When the packet is ready, the FPGA sets `data_ready`. The RP2040 sees it, starts the SPI transfer, and reads the 128 bytes. The FPGA is the SPI slave and sends the packet on MISO. The uP checks the checksum and frame format, then uses the data.
 
-1. The FPGA synchronizes `lab_clk` to its 50 MHz clock and detects a rising
-   edge. After the settle interval, it snapshots the probes, increments the
-   sample number, and builds the packet.
-2. `data_ready` goes high to indicate that a packet is available. The FPGA
-   holds that packet while it waits for a complete SPI read.
-3. Connect `data_ready` to an RP2040 GPIO configured for a rising-edge
-   interrupt. The interrupt can start the SPI transfer directly or signal a
-   task to start it.
-4. The RP2040 is the SPI master. It asserts chip select and clocks 128 bytes
-   in SPI mode 0 (CPOL=0, CPHA=0). It sends dummy MOSI data to generate the
-   clocks; the FPGA returns the packet on MISO.
-5. The RP2040 SPI RX DMA channel can write the received bytes into a
-   128-byte buffer in RP2040 SRAM. The RP2040 firmware chooses the buffer
-   address; the FPGA does not specify a fixed memory address.
-6. After a complete frame and the end of chip select, the FPGA lowers
-   `data_ready`. Firmware can then validate and process the received buffer.
-   An incomplete read does not consume the pending packet: `data_ready` stays
-   high so the RP2040 can retry.
+| File | Role |
+| --- | --- |
+| `debug_ip.sv` | Maps internal signals to debug IDs |
+| `spi_slave.sv` | Captures signals, builds the packet, does the SPI transfer |
+| `debug_demo.sv` | Connects the lab design, debug IP, and SPI slave |
+| `debug_tb.sv` | Testbench that checks the packet and a full SPI read |
 
-The DMA/interrupt flow above describes how firmware can integrate with this
-FPGA interface; this repository contains the FPGA RTL and simulation, not
-RP2040 firmware or a board-level wiring configuration. Connect the SPI and
-ready signals to suitable GPIOs, with a common ground and compatible I/O
-levels.
+Packet: 128 bytes, SPI mode 0.
 
-## SPI packet format
+| Byte | Field |
+| --- | --- |
+| 0 | Start marker `0xA5` |
+| 1 | Protocol version `0x01` |
+| 2–3 | Sample number (little-endian) |
+| 4–45 | 14 signal records, `{id, width, value}` |
+| 46–126 | Padding `0x00` |
+| 127 | Checksum, XOR of bytes 0–126 |
 
-The FPGA always transmits exactly 128 bytes, most-significant bit first within
-each byte. Multi-byte fields and signal values are little-endian
-(least-significant byte first). The frame contains 14 signal records. Their
-count is fixed by this implementation and is not sent as a separate field.
+## What works
 
-| Byte offset | Length | Field | Description |
-| --- | ---: | --- | --- |
-| 0 | 1 | Start marker | `0xA5` |
-| 1 | 1 | Protocol version | `0x01` |
-| 2–3 | 2 | Sample number | Unsigned 16-bit count; byte 2 is low, byte 3 is high |
-| 4–45 | 42 | Signal records | 14 records of `{signal_id, width_in_bits, value}` |
-| 46–126 | 81 | Reserved padding | `0x00` |
-| 127 | 1 | Checksum | XOR of bytes 0–126 |
+| Item | Status |
+| --- | --- |
+| Debug IP signal map | Working |
+| SPI slave and packet building on the FPGA | Working |
+| Packet format | Working |
+| Testbench check of a full packet | Working |
+| SPI packet framing and byte conversion | Working |
+| uP packet receiving and parsing | Working |
+| `data_ready` handoff to the SPI transfer | Working |
+| Screen, menu, and buttons | Working |
+| Website generating the header and debug output for the sample lab | Working, still rough |
+| debug IP generation for a specific lab | Planned |
 
-Each record is packed in ascending signal ID order:
+## What does not work yet
 
-| Record bytes | Field | Description |
+| Item | Status |
+| --- | --- |
+| Student upload of sample labs | In progress |
+| Generating the C header and debug output from uploaded files | In progress |
+| Putting the generated code into a testbench or firmware project | In progress |
+| Running student test code against FPGA data | Planned |
+| Pass/fail results | Planned |
+| Multi-window debug UI on the display | Planned |
+| Logic driver (uP to DE10, changing signals) | Planned |
+| Upload any lab and get a working debug setup | Planned |
+
+## What we hope to improve
+
+Right now this only works for one sample lab. We want it to work for many labs. A student would upload a Quartus project as a zip, the website would generate a custom debug IP and matching C header for that specific lab, and the student would connect that debug IP into their design as the top level. The RP2040 would still do the same SPI transaction and signal processing, and then the results would be shown on the screen.
+
+## Bugs
+
+| Bug | Where | Description |
 | --- | --- | --- |
-| First | Signal ID | Index from the debug IP signal map below |
-| Second | Width | Number of meaningful bits in the signal value |
-| Following | Value | `ceil(width / 8)` bytes, least-significant byte first |
+| `data_ready` timing | FPGA/uP handoff | Time between the FPGA setting `data_ready` and the uP starting the SPI transfer isn't consistent |
+| Stale packets | Debug pipeline | If the system isn't fully reset between reads, the uP can process an old packet |
+| Transfer boundary checks | SPI receive | The RP2040 doesn't reliably catch incomplete or misaligned reads |
+| Display refresh | UI | The screen can lag behind the latest packet when the view changes |
 
-All current signals are at most 4 bits wide, so each value occupies one byte.
-Thus every current record is 3 bytes and byte 4 begins record 0: it is the
-signal ID, not a separate signal-count field. The records end at byte 45;
-bytes 46–126 are zero padding. The checksum in byte 127 is the XOR of every
-byte from the start marker through the final padding byte.
+## Who worked on what
 
-### Debug IP signal ID map
-
-The packet's signal ID selects a signal as a whole. The listed probe slice
-shows where its value is wired in the 44-bit `probes` bus. Narrow inputs are
-zero-extended by `debug_demo` to fill their four-bit probe slices.
-
-| Packet ID | Signal | Width (bits) | Probe bit(s) |
-| ---: | --- | ---: | --- |
-| 0 | `lab_clk` (debug IP input `clk`) | 1 | 0 |
-| 1 | `s_l` | 1 | 1 |
-| 2 | `cin` | 1 | 2 |
-| 3 | `cout` | 1 | 3 |
-| 4 | `input_data` | 4 | 7:4 |
-| 5 | `msa` | 2 | 11:8 |
-| 6 | `msb` | 2 | 15:12 |
-| 7 | `msc` | 3 | 19:16 |
-| 8 | `reg_a` | 4 | 23:20 |
-| 9 | `reg_b` | 4 | 27:24 |
-| 10 | `output_data` | 4 | 31:28 |
-| 11 | `a_and_b` | 4 | 35:32 |
-| 12 | `a_or_b` | 4 | 39:36 |
-| 13 | `a_plus_b` | 4 | 43:40 |
-
-## RTL and simulation
-
-- `debug_ip.sv` maps signals to probe IDs.
-- `spi_slave.sv` captures probes and implements the packet and SPI interface.
-- `debug_demo.sv` connects the RALU, debug IP, and SPI slave.
-- `debug_tb.sv` simulates receiving and checking a complete 128-byte packet.
-
-The testbench can also export verified SPI reads for firmware testing. See
-[packet export instructions](demo_sem_one/tb/README.md) for Questa commands,
-header generation, and the firmware handoff format.
+| Person | Worked on |
+| --- | --- |
+| Omar | uP communication, SPI packet handling, FPGA to uP data transfer |
+| Daphne | Screen and UI, menu flow, button input |
+| Soor | Debug IP, SPI slave, packet format, website |
+| Lucas | Website, testbench work |

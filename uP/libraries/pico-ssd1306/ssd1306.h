@@ -1,7 +1,7 @@
 #ifndef SSD1306_SSD1306_H
 #define SSD1306_SSD1306_H
 
-#include <string.h>
+#include "string.h"
 #include "hardware/i2c.h"
 #include "frameBuffer/FrameBuffer.h"
 
