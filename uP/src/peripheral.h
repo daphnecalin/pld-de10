@@ -4,14 +4,14 @@
 #include "ssd1306.h"
 #include "textRenderer/TextRenderer.h"
 
-#define I2C_PORT i2c_default
-#define I2C_PIN_SDA PICO_DEFAULT_I2C_SDA_PIN
-#define I2C_PIN_SCL PICO_DEFAULT_I2C_SCL_PIN
+constexpr i2c_inst_t *I2C_PORT = i2c_default;
+constexpr int I2C_PIN_SDA = PICO_DEFAULT_I2C_SDA_PIN;
+constexpr int I2C_PIN_SCL = PICO_DEFAULT_I2C_SCL_PIN;
 
-#define BUTTON_UP_PIN 10
-#define BUTTON_DOWN_PIN 9
-#define BUTTON_RIGHT_PIN 6
-#define BUTTON_LEFT_PIN 5
+constexpr int BUTTON_UP_PIN = 10;
+constexpr int BUTTON_DOWN_PIN = 9;
+constexpr int BUTTON_RIGHT_PIN = 6;
+constexpr int BUTTON_LEFT_PIN = 5;
 
 int button_init(void);
 void drawText5x8(const char *text, pico_ssd1306::SSD1306 display);

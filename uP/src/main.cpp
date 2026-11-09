@@ -7,7 +7,7 @@
 
 #include "peripheral.h"
 
-#define DEBOUNCE_TIME_US 40000
+constexpr int DEBOUNCE_TIME_US = 40000;
 
 #include "ssd1306.h"
 #include "textRenderer/TextRenderer.h"
