@@ -7,28 +7,23 @@
 #include "textRenderer/TextRenderer.h"
 #include <pico/time.h>
 
-// keep gpio pins internalvesk
-#define BUTTON_UP_PIN 10
-#define BUTTON_DOWN_PIN 9
-#define BUTTON_RIGHT_PIN 8
-#define BUTTON_LEFT_PIN 7
+static const uint btn_pins[hw::BTN_COUNT] = {hw::BTN_DOWN_PIN, hw::BTN_UP_PIN, hw::BTN_LEFT_PIN,
+                                             hw::BTN_RIGHT_PIN};
 
-#define DEBOUNCE_MS 20
+static volatile bool pressed_flag[hw::BTN_COUNT];
 
-static const uint button_pins[BTN_COUNT] = {BUTTON_DOWN_PIN, BUTTON_UP_PIN,
-                                            BUTTON_LEFT_PIN, BUTTON_RIGHT_PIN};
-
-static volatile bool pressed_flag[BTN_COUNT];
-
-void drawText5x8(const char *text, pico_ssd1306::SSD1306 *display) {
+void hw::drawText5x8(const char *text, pico_ssd1306::SSD1306 *display)
+{
   drawText(display, font_5x8, text, 0, 0);
 }
 
-static int64_t debounce_alarm(alarm_id_t id, void *user_data) {
+static int64_t debounce_alarm(alarm_id_t id, void *user_data)
+{
   int btn_id = (int)(intptr_t)user_data;
-  uint pin = button_pins[btn_id];
+  uint pin = btn_pins[btn_id];
 
-  if (!gpio_get(pin)) {
+  if (!gpio_get(pin))
+  {
     pressed_flag[btn_id] = true;
   }
 
@@ -37,50 +32,57 @@ static int64_t debounce_alarm(alarm_id_t id, void *user_data) {
   return 0;
 }
 
-static void button_callback(uint gpio, uint32_t events) {
-  // button index e.g. BUTTON_DOWN's id is 0
+static void btn_callback(uint gpio, uint32_t events)
+{
+  // btn index e.g. btn_DOWN's id is 0
   int id = -1;
-  for (int i = 0; i < BTN_COUNT; i++)
-    if (button_pins[i] == gpio)
+  for (int i = 0; i < hw::BTN_COUNT; i++)
+    if (btn_pins[i] == gpio)
       id = i;
-  if (id < 0) {
+  if (id < 0)
+  {
     return;
   }
 
   // disable interrupts until the debounce period is over
   gpio_set_irq_enabled(gpio, GPIO_IRQ_EDGE_FALL, false);
-  // set an alarm that runs after debounce period, pass the button index
-  add_alarm_in_ms(DEBOUNCE_MS, debounce_alarm, (void *)(intptr_t)id, false);
+  // set an alarm that runs after debounce period, pass the btn index
+  add_alarm_in_ms(hw::DEBOUNCE_MS, debounce_alarm, (void *)(intptr_t)id, false);
 }
 
 // Set GPIO pins for button navigation
-int button_init(void) {
-  uint32_t button_mask = (1 << BUTTON_DOWN_PIN) | (1 << BUTTON_UP_PIN) |
-                         (1 << BUTTON_LEFT_PIN) | (1 << BUTTON_RIGHT_PIN);
-  gpio_init_mask(button_mask);
-  gpio_set_dir_in_masked(button_mask);
+int hw::btn_init(void)
+{
+  uint32_t btn_mask = (1 << BTN_DOWN_PIN) | (1 << BTN_UP_PIN) |
+                      (1 << BTN_LEFT_PIN) | (1 << BTN_RIGHT_PIN);
+  gpio_init_mask(btn_mask);
+  gpio_set_dir_in_masked(btn_mask);
 
-  gpio_set_irq_enabled_with_callback(button_pins[0], GPIO_IRQ_EDGE_FALL, true,
-                                     &button_callback);
+  gpio_set_irq_enabled_with_callback(btn_pins[0], GPIO_IRQ_EDGE_FALL, true,
+                                     &btn_callback);
   for (int i = 1; i < BTN_COUNT; i++)
-    gpio_set_irq_enabled(button_pins[i], GPIO_IRQ_EDGE_FALL, true);
+    gpio_set_irq_enabled(btn_pins[i], GPIO_IRQ_EDGE_FALL, true);
 
   return PICO_OK;
 }
 
-// check if a button was pressed and return it to false once checked
-bool button_pressed(int id) {
-  if (id >= BTN_COUNT || id < 0) {
+// check if a btn was pressed and return it to false once checked
+bool hw::btn_pressed(int id)
+{
+  if (id >= BTN_COUNT || id < 0)
+  {
     return false;
   }
-  if (pressed_flag[id]) {
+  if (pressed_flag[id])
+  {
     pressed_flag[id] = false;
     return true;
   }
   return false;
 }
 
-int screen_init(void) {
+int hw::screen_init(void)
+{
   i2c_init(I2C_PORT, 400000); // Use i2c port with baud rate of 400khz
   // Set pins for I2C operation
   gpio_set_function(I2C_PIN_SDA, GPIO_FUNC_I2C);
@@ -90,10 +92,18 @@ int screen_init(void) {
   return PICO_OK;
 }
 
-int peripheral_init(void) {
+int hw::peripheral_init(void)
+{
   // TODO: add error handling
-  button_init();
+  btn_init();
   screen_init();
   stdio_init_all();
+  return PICO_OK;
+}
+
+int hw::spi_init(void)
+{
+  // set up spi module connected to de10
+  // set up gpio interrupt for rising edge to initiate transmission
   return PICO_OK;
 }

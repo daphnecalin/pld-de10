@@ -47,10 +47,10 @@ state_t state = MENU;
 
 int main(void)
 {
-  peripheral_init();
+  hw::peripheral_init();
 
   pico_ssd1306::SSD1306 display =
-      pico_ssd1306::SSD1306(I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
+      pico_ssd1306::SSD1306(hw::I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
 
   int cursor_pos = 0;
   state_t next_state;
@@ -61,11 +61,11 @@ int main(void)
 
     if (state == MENU)
     {
-      if (button_pressed(BTN_DOWN))
+      if (btn_pressed(hw::BTN_DOWN))
       {
         cursor_pos = (cursor_pos + 1) % MENUITEM_CT;
       }
-      if (button_pressed(BTN_UP))
+      if (btn_pressed(hw::BTN_UP))
       {
         printf("I am going up");
         cursor_pos = (cursor_pos - 1 + MENUITEM_CT) % MENUITEM_CT;
@@ -81,7 +81,7 @@ int main(void)
         next_state = SETTINGS;
       }
 
-      if (button_pressed(BTN_RIGHT))
+      if (btn_pressed(hw::BTN_RIGHT))
       {
         printf("I am going right");
         state = next_state;
@@ -100,7 +100,7 @@ int main(void)
       printf("I am analyzing");
       drawText(&display, font_5x8, "I am the analyze menu :)\n", 10, 0);
       drawText(&display, font_5x8, "Press LEFT to go back\n", 10, 10);
-      if (button_pressed(BTN_LEFT))
+      if (btn_pressed(hw::BTN_LEFT))
       {
         state = MENU;
       }
@@ -110,7 +110,7 @@ int main(void)
       printf("%d", gpio_get(7));
       drawText(&display, font_5x8, "I am the settings menu :)\n", 10, 0);
       drawText(&display, font_5x8, "Press LEFT to go back\n", 10, 10);
-      if (button_pressed(BTN_LEFT))
+      if (btn_pressed(hw::BTN_LEFT))
       {
         printf("I am left");
         state = MENU;
