@@ -101,9 +101,26 @@ int hw::peripheral_init(void)
   return PICO_OK;
 }
 
-int hw::spi_init(void)
+// Example: https://github.com/raspberrypi/pico-examples/blob/master/spi/spi_master_slave/spi_master/spi_master.c
+int hw::spi_setup(void)
 {
   // set up spi module connected to de10
   // set up gpio interrupt for rising edge to initiate transmission
+  spi_init(spi_default, 1000 * 1000);
+  gpio_set_function(PICO_DEFAULT_SPI_RX_PIN, GPIO_FUNC_SPI);
+  gpio_set_function(PICO_DEFAULT_SPI_SCK_PIN, GPIO_FUNC_SPI);
+  gpio_set_function(PICO_DEFAULT_SPI_TX_PIN, GPIO_FUNC_SPI);
+
+  // the chip select needs to be driven manually
+  // set high while idling
+  gpio_init(hw::SPI_PIN_CS);
+  gpio_set_dir(hw::SPI_PIN_CS, GPIO_OUT);
+  gpio_put(hw::SPI_PIN_CS, 1);
+
+  gpio_init(hw::DATA_READY_PIN);
+  gpio_set_input_enabled(hw::DATA_READY_PIN);
+  gpio_add_raw_irq_handler(hw::DATA_READY_PIN, transfer::data_ready);
+  gpio_set_irq_enabled(hw::DATA_READY_PIN, GPIO_IRQ_EDGE_RISE, true);
+
   return PICO_OK;
 }
