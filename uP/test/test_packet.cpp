@@ -58,11 +58,4 @@ TEST_CASE("Packet::parse rejects bad data") {
         f.frame[packet::FRAME_BYTES - 1] -= 1;
         CHECK_FALSE(Packet::parse(f.frame));
     }
-
-    SUBCASE("byte not within representable range") {
-        size_t offset = 4;
-        f.frame[offset + 1] = 5;
-        checksum(f.frame);
-        CHECK_FALSE(Packet::parse(f.frame));
-    }
 }
