@@ -11,6 +11,7 @@ using std::uint8_t, std::uint32_t, std::size_t;
 // constexpr instead of #define is kind of awesome
 // number of bytes in a frame
 constexpr size_t FRAME_BYTES = 128;
+constexpr size_t CONTROL_COMMAND_BYTES = 11;
 // start marker of packet
 constexpr uint8_t START_MARKER = 0xA5;
 
@@ -32,6 +33,7 @@ constexpr size_t MAX_SIGNALS = 16;
 
 // types for ease of use
 using Frame = std::array<uint8_t, FRAME_BYTES>;
+using ControlCommandFrame = std::array<uint8_t, CONTROL_COMMAND_BYTES>;
 using Signal_Data = std::uint32_t;
 // each signal contains:
 // signal id, width, and relevant values
@@ -51,4 +53,18 @@ struct Packet {
     // parse frame into packet, use optional for error handling code
     static std::optional<Packet> parse(const Frame& frame);
 };
+
+enum class ControlOpcode : uint8_t { Set = 0x01, ClearOverride = 0x02 };
+
+struct ControlCommand {
+    ControlOpcode opcode;
+    uint8_t sequence;
+    uint8_t id;
+    uint8_t width;
+    uint32_t value;
+};
+
+// IDs and widths match the demo signal map. The FPGA rejects non-writable IDs.
+constexpr uint8_t CONTROL_MARKER = 0xC3;
+ControlCommandFrame encode_control_command(const ControlCommand& command);
 }

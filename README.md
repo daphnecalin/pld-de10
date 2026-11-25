@@ -1,109 +1,149 @@
-# pld-de10
+# DE-10 Lite Debug Backpack Demo
 
-## Debug capture flow
+This demo connects a DE-10 Lite RALU design to an RP2040 over SPI. The FPGA
+sends captured signal values to the RP2040. The RP2040 can also override a
+small set of RALU inputs and return them to the DE-10 Lite's physical inputs
+when the override is cleared.
 
-The FPGA samples the RALU debug probes after a rising edge of `lab_clk` and
-holds the resulting packet until the RP2040 reads a complete SPI frame.
+## Reading data from the FPGA
 
-```mermaid
-flowchart TD
-    A["FPGA captures probes<br/>and builds packet"] --> B["data_ready goes HIGH"]
-    B -->|"GPIO interrupt"| C["RP2040 starts SPI transaction"]
-    C --> D["RP2040 clocks 128 bytes<br/>with dummy MOSI data"]
-    D -->|"SPI MISO"| E["FPGA shifts packet"]
-    E --> F["SPI RX DMA stores bytes<br/>in RP2040 SRAM buffer"]
-    F --> G["Full frame received;<br/>CS goes HIGH"]
-    G --> H["FPGA lowers data_ready"]
-    F --> I["RP2040 validates and<br/>processes packet"]
+1. After a rising edge of `lab_clk`, the FPGA captures the debug probes and
+   builds a 128-byte telemetry packet.
+2. The FPGA raises `data_ready` and holds that packet until it receives a
+   complete read.
+3. The RP2040 polls `data_ready`, then clocks the packet out over SPI. It sends
+   zero bytes on MOSI to provide the clocks and receives the packet on MISO.
+4. A complete read lowers `data_ready`. If a read stops early, the FPGA keeps
+   the packet so the RP2040 can retry it.
+
+The SPI link uses mode 0 (CPOL 0, CPHA 0) at 1 MHz in the current RP2040
+firmware.
+
+### Telemetry packet
+
+| Byte(s) | Contents |
+| --- | --- |
+| 0 | Start marker `0xA5` |
+| 1 | Version `0x01` |
+| 2-3 | 16-bit sample number, low byte first |
+| 4-45 | 14 signal records: ID, width in bits, value |
+| 46-126 | Reserved, set to zero |
+| 127 | XOR checksum of bytes 0-126 |
+
+The current signals are at most 4 bits wide, so each value takes one byte.
+The [signal map](#demo-signal-map) lists the IDs and widths.
+
+## Writing RALU inputs from the RP2040
+
+Writes use a separate SPI transaction. The RP2040 sends an 11-byte command on
+MOSI. The FPGA validates it, updates the requested override, then sets
+`command_done` and places a result code on `command_status[2:0]`. The MISO data
+during a write is ignored. A write does not replace or consume a pending
+telemetry packet. `command_done` stays high until the next SPI transaction
+starts.
+
+| Byte | Contents |
+| --- | --- |
+| 0 | Command marker `0xC3` |
+| 1 | Version `0x01` |
+| 2 | Opcode: `0x01` set override, `0x02` clear override |
+| 3 | Sequence byte (sent by the RP2040; not used for acknowledgement matching) |
+| 4 | Signal ID |
+| 5 | Signal width in bits |
+| 6-9 | 32-bit value, least-significant byte first |
+| 10 | XOR checksum of bytes 0-9 |
+
+The FPGA only allows writes to the following demo inputs:
+
+| ID | Input | Width |
+| ---: | --- | ---: |
+| 1 | `s_l` | 1 bit |
+| 2 | `cin` | 1 bit |
+| 4 | `input_data` | 4 bits |
+| 5 | `msa` | 2 bits |
+| 6 | `msb` | 2 bits |
+| 7 | `msc` | 3 bits |
+
+For each input, the wrapper uses the firmware value while its override is
+enabled; otherwise it uses the DE-10 Lite input. Clock and reset cannot be
+overridden. A validated change is transferred to the RALU's `lab_clk` domain
+and takes effect there.
+
+`command_status` uses these values:
+
+| Value | Meaning |
+| ---: | --- |
+| 0 | No command result yet |
+| 1 | Command accepted |
+| 2 | Bad length, version, or checksum |
+| 3 | Signal ID is not writable |
+| 4 | Width does not match the signal |
+| 5 | Value is too large for the signal |
+| 6 | Unknown opcode |
+
+## RP2040 firmware
+
+The current firmware displays the latest RALU telemetry on its OLED. For
+bring-up, enter commands over the Pico's USB serial connection:
+
+```text
+set 4 A
+clear 4
 ```
 
-### Step by step
+Values are entered in hexadecimal. The first command sets `input_data` to
+`0xA`; the second returns it to the DE-10 Lite input. Other writable IDs are
+shown in the startup message. Physical menu buttons have not been assigned in
+this demo.
 
-1. The FPGA synchronizes `lab_clk` to its 50 MHz clock and detects a rising
-   edge. After the settle interval, it snapshots the probes, increments the
-   sample number, and builds the packet.
-2. `data_ready` goes high to indicate that a packet is available. The FPGA
-   holds that packet while it waits for a complete SPI read.
-3. Connect `data_ready` to an RP2040 GPIO configured for a rising-edge
-   interrupt. The interrupt can start the SPI transfer directly or signal a
-   task to start it.
-4. The RP2040 is the SPI master. It asserts chip select and clocks 128 bytes
-   in SPI mode 0 (CPOL=0, CPHA=0). It sends dummy MOSI data to generate the
-   clocks; the FPGA returns the packet on MISO.
-5. The RP2040 SPI RX DMA channel can write the received bytes into a
-   128-byte buffer in RP2040 SRAM. The RP2040 firmware chooses the buffer
-   address; the FPGA does not specify a fixed memory address.
-6. After a complete frame and the end of chip select, the FPGA lowers
-   `data_ready`. Firmware can then validate and process the received buffer.
-   An incomplete read does not consume the pending packet: `data_ready` stays
-   high so the RP2040 can retry.
+Default Pico GPIO assignments are:
 
-The DMA/interrupt flow above describes how firmware can integrate with this
-FPGA interface; this repository contains the FPGA RTL and simulation, not
-RP2040 firmware or a board-level wiring configuration. Connect the SPI and
-ready signals to suitable GPIOs, with a common ground and compatible I/O
-levels.
+| Pico GPIO | Signal |
+| ---: | --- |
+| GP16 | SPI MISO |
+| GP17 | SPI chip select (software controlled) |
+| GP18 | SPI SCK |
+| GP19 | SPI MOSI |
+| GP20 | `data_ready` input |
+| GP21 | `command_done` input |
+| GP22-GP24 | `command_status[0:2]` inputs |
 
-## SPI packet format
+These are firmware defaults for the demo, not a finished PCB pinout. Route the
+matching FPGA signals to these pins (or change the firmware definitions), and
+share ground. Use compatible 3.3 V logic.
 
-The FPGA always transmits exactly 128 bytes, most-significant bit first within
-each byte. Multi-byte fields and signal values are little-endian
-(least-significant byte first). The frame contains 14 signal records. Their
-count is fixed by this implementation and is not sent as a separate field.
+## Demo signal map
 
-| Byte offset | Length | Field | Description |
-| --- | ---: | --- | --- |
-| 0 | 1 | Start marker | `0xA5` |
-| 1 | 1 | Protocol version | `0x01` |
-| 2–3 | 2 | Sample number | Unsigned 16-bit count; byte 2 is low, byte 3 is high |
-| 4–45 | 42 | Signal records | 14 records of `{signal_id, width_in_bits, value}` |
-| 46–126 | 81 | Reserved padding | `0x00` |
-| 127 | 1 | Checksum | XOR of bytes 0–126 |
+| ID | Signal | Width |
+| ---: | --- | ---: |
+| 0 | `lab_clk` | 1 bit |
+| 1 | `s_l` | 1 bit |
+| 2 | `cin` | 1 bit |
+| 3 | `cout` | 1 bit |
+| 4 | `input_data` | 4 bits |
+| 5 | `msa` | 2 bits |
+| 6 | `msb` | 2 bits |
+| 7 | `msc` | 3 bits |
+| 8 | `reg_a` | 4 bits |
+| 9 | `reg_b` | 4 bits |
+| 10 | `output_data` | 4 bits |
+| 11 | `a_and_b` | 4 bits |
+| 12 | `a_or_b` | 4 bits |
+| 13 | `a_plus_b` | 4 bits |
 
-Each record is packed in ascending signal ID order:
+## Simulation
 
-| Record bytes | Field | Description |
-| --- | --- | --- |
-| First | Signal ID | Index from the debug IP signal map below |
-| Second | Width | Number of meaningful bits in the signal value |
-| Following | Value | `ceil(width / 8)` bytes, least-significant byte first |
+The Questa testbench checks telemetry reads and retries, all writable input
+IDs, command validation, writes while a telemetry sample is pending, and
+clearing an override. See [the simulation guide](demo_sem_one/tb/README.md) for
+the commands to compile and run it.
 
-All current signals are at most 4 bits wide, so each value occupies one byte.
-Thus every current record is 3 bytes and byte 4 begins record 0: it is the
-signal ID, not a separate signal-count field. The records end at byte 45;
-bytes 46–126 are zero padding. The checksum in byte 127 is the XOR of every
-byte from the start marker through the final padding byte.
+The testbench instantiates `debug_ip` and `spi_slave` directly. It checks the
+SPI packet and override mapping, but does not model the RALU arithmetic or
+verify the board-level pin wiring.
 
-### Debug IP signal ID map
+## RTL files
 
-The packet's signal ID selects a signal as a whole. The listed probe slice
-shows where its value is wired in the 44-bit `probes` bus. Narrow inputs are
-zero-extended by `debug_demo` to fill their four-bit probe slices.
-
-| Packet ID | Signal | Width (bits) | Probe bit(s) |
-| ---: | --- | ---: | --- |
-| 0 | `lab_clk` (debug IP input `clk`) | 1 | 0 |
-| 1 | `s_l` | 1 | 1 |
-| 2 | `cin` | 1 | 2 |
-| 3 | `cout` | 1 | 3 |
-| 4 | `input_data` | 4 | 7:4 |
-| 5 | `msa` | 2 | 11:8 |
-| 6 | `msb` | 2 | 15:12 |
-| 7 | `msc` | 3 | 19:16 |
-| 8 | `reg_a` | 4 | 23:20 |
-| 9 | `reg_b` | 4 | 27:24 |
-| 10 | `output_data` | 4 | 31:28 |
-| 11 | `a_and_b` | 4 | 35:32 |
-| 12 | `a_or_b` | 4 | 39:36 |
-| 13 | `a_plus_b` | 4 | 43:40 |
-
-## RTL and simulation
-
-- `debug_ip.sv` maps signals to probe IDs.
-- `spi_slave.sv` captures probes and implements the packet and SPI interface.
-- `debug_demo.sv` connects the RALU, debug IP, and SPI slave.
-- `debug_tb.sv` simulates receiving and checking a complete 128-byte packet.
-
-The testbench can also export verified SPI reads for firmware testing. See
-[packet export instructions](demo_sem_one/tb/README.md) for Questa commands,
-header generation, and the firmware handoff format.
+- [`debug_ip.sv`](demo_sem_one/rtl/debug_ip.sv) maps the demo signals to probe IDs.
+- [`spi_slave.sv`](demo_sem_one/rtl/spi_slave.sv) captures telemetry and handles SPI reads and write commands.
+- [`debug_demo.sv`](demo_sem_one/rtl/debug_demo.sv) connects the RALU, input overrides, debug IP, and SPI slave.

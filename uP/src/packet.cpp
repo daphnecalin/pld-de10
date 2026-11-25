@@ -1,6 +1,23 @@
 #include "packet.h"
 
 namespace packet {
+    ControlCommandFrame encode_control_command(const ControlCommand& command) {
+        ControlCommandFrame frame{};
+        frame[0] = CONTROL_MARKER;
+        frame[1] = PROTOCOL_VER;
+        frame[2] = static_cast<uint8_t>(command.opcode);
+        frame[3] = command.sequence;
+        frame[4] = command.id;
+        frame[5] = command.width;
+        frame[6] = static_cast<uint8_t>(command.value);
+        frame[7] = static_cast<uint8_t>(command.value >> 8);
+        frame[8] = static_cast<uint8_t>(command.value >> 16);
+        frame[9] = static_cast<uint8_t>(command.value >> 24);
+        for(size_t i = 0; i < frame.size() - 1; i++)
+            frame[10] ^= frame[i];
+        return frame;
+    }
+
     std::optional<Packet> parse(const Frame& frame) {
         // check start marker and protocol version
         if(frame[0] != 0xA5 || frame[1] != PROTOCOL_VER)
