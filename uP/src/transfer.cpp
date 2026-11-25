@@ -21,5 +21,7 @@ packet::Frame transfer::spi_receive(void)
   // do transmission stuff and fill frame
   // spi_read_blocking(hw::SPI_PORT, );
   data_ready_flag = 0;
+
+  // also add the record to the ring buffer
   return f;
 }
