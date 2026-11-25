@@ -1,5 +1,6 @@
 #include "transfer.h"
 #include "peripheral.h"
+#include "core/record.h"
 #include <hardware/spi.h>
 #include <stdint.h>
 
@@ -7,12 +8,14 @@
 volatile uint8_t data_ready_flag = 0;
 
 // ISR that goes off when gpio goes high
-void transfer::data_ready(void) {
+void transfer::data_ready(void)
+{
   // change data ready flag
   data_ready_flag = 1;
 }
 
-packet::Frame transfer::spi_receive(void) {
+packet::Frame transfer::spi_receive(void)
+{
   // poll data ready flag then initiate transmission
   while (!data_ready_flag)
     ;
@@ -22,5 +25,7 @@ packet::Frame transfer::spi_receive(void) {
   data_ready_flag = 0;
 
   // also add the record to the ring buffer
+  ringBufferWrite(transfer::ringbuf, f);
+
   return f;
 }

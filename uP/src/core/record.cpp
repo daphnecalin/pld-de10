@@ -6,7 +6,7 @@ void ringBufferInit(RingBuffer *rb)
     rb->tail = 0;
 }
 
-bool ringBufferWrite(RingBuffer *rb, uint16_t value)
+bool ringBufferWrite(RingBuffer *rb, Record value)
 {
     uint16_t nextHead = (rb->head + 1) % RING_BUFFER_SIZE;
 
@@ -21,7 +21,7 @@ bool ringBufferWrite(RingBuffer *rb, uint16_t value)
     return true;
 }
 
-bool ringBufferRead(RingBuffer *rb, uint16_t *value)
+bool ringBufferRead(RingBuffer *rb, Record *value)
 {
     // check if the buffer is empty
     if (rb->head == rb->tail)

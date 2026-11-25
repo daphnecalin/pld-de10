@@ -122,5 +122,7 @@ int hw::spi_setup(void)
   gpio_add_raw_irq_handler(hw::DATA_READY_PIN, transfer::data_ready);
   gpio_set_irq_enabled(hw::DATA_READY_PIN, GPIO_IRQ_EDGE_RISE, true);
 
+  ringBufferInit(transfer::ringbuf);
+
   return PICO_OK;
 }

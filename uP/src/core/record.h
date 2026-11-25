@@ -19,8 +19,8 @@ typedef struct
 
 void ringBufferInit(RingBuffer *rb);
 
-bool ringBufferWrite(RingBuffer *rb, uint16_t value);
+bool ringBufferWrite(RingBuffer *rb, Record value);
 
-bool ringBufferRead(RingBuffer *rb, uint16_t *value);
+bool ringBufferRead(RingBuffer *rb, Record *value);
 
 int ringBufferCount(const RingBuffer *rb);
