@@ -1,4 +1,5 @@
-#pragma once
+#ifndef RECORD_H_
+#define RECORD_H_
 
 #include "packet.h"
 
@@ -7,7 +8,7 @@ constexpr int RING_BUFFER_SIZE = 512;
 typedef struct
 {
     uint64_t t_us;
-    Frame frame;
+    packet::Frame frame;
 } Record;
 
 typedef struct
@@ -24,3 +25,5 @@ bool ringBufferWrite(RingBuffer *rb, Record value);
 bool ringBufferRead(RingBuffer *rb, Record *value);
 
 int ringBufferCount(const RingBuffer *rb);
+
+#endif

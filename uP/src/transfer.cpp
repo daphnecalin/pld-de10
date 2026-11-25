@@ -21,11 +21,12 @@ packet::Frame transfer::spi_receive(void)
     ;
   packet::Frame f;
   // do transmission stuff and fill frame
-  spi_read_blocking(hw::SPI_PORT, f.data(), f.size());
+  spi_read_blocking(SPI_PORT, 0x00, f.data(), f.size());
   data_ready_flag = 0;
 
   // also add the record to the ring buffer
-  ringBufferWrite(transfer::ringbuf, f);
+  Record record = {.t_us = time_us_64(), .frame = f};
+  ringBufferWrite(&transfer::ringbuf, record);
 
   return f;
 }

@@ -26,7 +26,7 @@ bool ringBufferRead(RingBuffer *rb, Record *value)
     // check if the buffer is empty
     if (rb->head == rb->tail)
     {
-        return false
+        return false;
     }
 
     *value = rb->buffer[rb->tail];
@@ -42,5 +42,3 @@ int ringBufferCount(const RingBuffer *rb)
     }
     return RING_BUFFER_SIZE - (rb->tail - rb->head);
 }
-
-int ringBuffer

@@ -5,6 +5,7 @@
 #include "textRenderer/TextRenderer.h"
 #include <hardware/spi.h>
 
+#define SPI_PORT spi_default
 namespace hw
 {
 
@@ -12,9 +13,9 @@ namespace hw
     constexpr int I2C_PIN_SDA = PICO_DEFAULT_I2C_SDA_PIN;
     constexpr int I2C_PIN_SCL = PICO_DEFAULT_I2C_SCL_PIN;
 
-    constexpr spi_inst_t *SPI_PORT = spi_default;
     constexpr int SPI_PIN_CS = 12;
 
+    constexpr int BTN_UP_PIN = 7; // TODO may be wrong
     constexpr int BTN_DOWN_PIN = 9;
     constexpr int BTN_RIGHT_PIN = 6;
     constexpr int BTN_LEFT_PIN = 5;

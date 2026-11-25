@@ -2,6 +2,8 @@
 #include "hardware/i2c.h"
 #include "pico/binary_info.h"
 #include "pico/stdlib.h"
+#include "core/record.h"
+#include "transfer.h"
 
 #include "ssd1306.h"
 #include "textRenderer/TextRenderer.h"
@@ -53,8 +55,8 @@ static void btn_callback(uint gpio, uint32_t events)
 // Set GPIO pins for button navigation
 int hw::btn_init(void)
 {
-  uint32_t btn_mask = (1 << BTN_DOWN_PIN) | (1 << BTN_UP_PIN) |
-                      (1 << BTN_LEFT_PIN) | (1 << BTN_RIGHT_PIN);
+  uint32_t btn_mask = (1 << hw::BTN_DOWN_PIN) | (1 << hw::BTN_UP_PIN) |
+                      (1 << hw::BTN_LEFT_PIN) | (1 << hw::BTN_RIGHT_PIN);
   gpio_init_mask(btn_mask);
   gpio_set_dir_in_masked(btn_mask);
 
@@ -118,11 +120,11 @@ int hw::spi_setup(void)
   gpio_put(hw::SPI_PIN_CS, 1);
 
   gpio_init(hw::DATA_READY_PIN);
-  gpio_set_input_enabled(hw::DATA_READY_PIN);
+  gpio_set_input_enabled(hw::DATA_READY_PIN, true);
   gpio_add_raw_irq_handler(hw::DATA_READY_PIN, transfer::data_ready);
   gpio_set_irq_enabled(hw::DATA_READY_PIN, GPIO_IRQ_EDGE_RISE, true);
 
-  ringBufferInit(transfer::ringbuf);
+  ringBufferInit(&transfer::ringbuf);
 
   return PICO_OK;
 }
