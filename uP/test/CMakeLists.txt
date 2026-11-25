@@ -4,7 +4,11 @@ set(CMAKE_CXX_STANDARD 17)
 enable_testing()
 
 # portable sources only
-add_library(fw_core STATIC ../src/core/packet.cpp)
+add_library(fw_core STATIC
+  ../src/core/packet.cpp
+  ../src/core/settings.cpp
+  ../src/core/ui.cpp
+  ../src/core/menus.cpp)
 target_include_directories(fw_core PUBLIC ../src/core)
 
 # doctest's main(), compiled once
