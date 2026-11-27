@@ -15,10 +15,10 @@ namespace hw
 
     constexpr int SPI_PIN_CS = 12;
 
-    constexpr int BTN_UP_PIN = 7; // TODO may be wrong
+    constexpr int BTN_UP_PIN = 10; // TODO may be wrong
     constexpr int BTN_DOWN_PIN = 9;
-    constexpr int BTN_RIGHT_PIN = 6;
-    constexpr int BTN_LEFT_PIN = 5;
+    constexpr int BTN_RIGHT_PIN = 8;
+    constexpr int BTN_LEFT_PIN = 7;
 
     constexpr int DATA_READY_PIN = 11;
     constexpr int DEBOUNCE_MS = 20;

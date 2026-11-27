@@ -1,8 +1,10 @@
-# Exporting simulated SPI packets
+# Simulating SPI reads and writes
 
 Run from the repository root.
-The original three-sample regression remains available without `+EXPORT_DIR`.
-The control stimulus now zero-extends msa/msb/msc to their documented widths.
+The testbench covers telemetry reads and retries, firmware input writes,
+command validation, and clearing overrides. It also checks that a write does
+not replace a telemetry sample that is already pending. It can still export
+the three telemetry fixtures from the original read regression.
 
 ## 1. Compile and run in the Questa Transcript window
 If a simulation is already loaded, run `quit -sim` first to unload it without
@@ -34,13 +36,33 @@ For a new set of captures, unload with `quit -sim` and repeat the block.
 Successful exports overwrite `sample_1.txt`, `sample_2.txt`, and `sample_3.txt`
 in `uP/src/test`. Save a copy elsewhere if you need an earlier run.
 
-Require the final `PASS: all 3 samples, interrupted retry, and checksums` message
-and no errors before packaging. Simulator exit status alone is insufficient.
-There should be three `EXPORTED` messages, one for each of those files. For example:
+Require the final `PASS: telemetry reads, retries, writes, validation, pending
+samples, and clear` message and no errors. If `+EXPORT_DIR` was supplied,
+there should also be three `EXPORTED` messages, one for each fixture. For example:
 
 ```text
 EXPORTED: <repository-root>/uP/src/test/sample_1.txt
 ```
+
+## What the test covers
+
+- Reads three telemetry packets and checks IDs, widths, values, padding,
+  sample numbers, and XOR checksums.
+- Aborts one read after eight bytes, then verifies the same pending sample can
+  be read again.
+- Writes every supported RALU input ID and checks the override values and
+  enable bits.
+- Captures telemetry after the writes and checks that it reports the
+  overridden inputs.
+- Rejects a bad checksum, unwritable ID, width mismatch, out-of-range value,
+  and invalid opcode without changing the active override.
+- Writes while a sample is pending, verifies that packet stays unchanged, and
+  checks that a later sample sees the new value.
+- Clears an override and checks that the physical input is used again.
+
+The bench instantiates `debug_ip` and `spi_slave` directly. It checks the SPI
+transport and override mapping, but does not model the actual RALU arithmetic
+or confirm board-level GPIO wiring.
 
 ## 2. Package the verified captures
 
