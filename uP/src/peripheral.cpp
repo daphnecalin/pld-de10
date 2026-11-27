@@ -7,12 +7,6 @@
 #include "textRenderer/TextRenderer.h"
 #include <pico/time.h>
 
-// keep gpio pins internalvesk
-#define BUTTON_UP_PIN 10
-#define BUTTON_DOWN_PIN 9
-#define BUTTON_RIGHT_PIN 8
-#define BUTTON_LEFT_PIN 7
-
 #define DEBOUNCE_MS 20
 
 static const uint button_pins[BTN_COUNT] = {BUTTON_DOWN_PIN, BUTTON_UP_PIN,
@@ -20,15 +14,18 @@ static const uint button_pins[BTN_COUNT] = {BUTTON_DOWN_PIN, BUTTON_UP_PIN,
 
 static volatile bool pressed_flag[BTN_COUNT];
 
-void drawText5x8(const char *text, pico_ssd1306::SSD1306 *display) {
+void drawText5x8(const char *text, pico_ssd1306::SSD1306 *display)
+{
   drawText(display, font_5x8, text, 0, 0);
 }
 
-static int64_t debounce_alarm(alarm_id_t id, void *user_data) {
+static int64_t debounce_alarm(alarm_id_t id, void *user_data)
+{
   int btn_id = (int)(intptr_t)user_data;
   uint pin = button_pins[btn_id];
 
-  if (!gpio_get(pin)) {
+  if (!gpio_get(pin))
+  {
     pressed_flag[btn_id] = true;
   }
 
@@ -37,13 +34,15 @@ static int64_t debounce_alarm(alarm_id_t id, void *user_data) {
   return 0;
 }
 
-static void button_callback(uint gpio, uint32_t events) {
+static void button_callback(uint gpio, uint32_t events)
+{
   // button index e.g. BUTTON_DOWN's id is 0
   int id = -1;
   for (int i = 0; i < BTN_COUNT; i++)
     if (button_pins[i] == gpio)
       id = i;
-  if (id < 0) {
+  if (id < 0)
+  {
     return;
   }
 
@@ -54,7 +53,8 @@ static void button_callback(uint gpio, uint32_t events) {
 }
 
 // Set GPIO pins for button navigation
-int button_init(void) {
+int button_init(void)
+{
   uint32_t button_mask = (1 << BUTTON_DOWN_PIN) | (1 << BUTTON_UP_PIN) |
                          (1 << BUTTON_LEFT_PIN) | (1 << BUTTON_RIGHT_PIN);
   gpio_init_mask(button_mask);
@@ -69,18 +69,22 @@ int button_init(void) {
 }
 
 // check if a button was pressed and return it to false once checked
-bool button_pressed(int id) {
-  if (id >= BTN_COUNT || id < 0) {
+bool button_pressed(int id)
+{
+  if (id >= BTN_COUNT || id < 0)
+  {
     return false;
   }
-  if (pressed_flag[id]) {
+  if (pressed_flag[id])
+  {
     pressed_flag[id] = false;
     return true;
   }
   return false;
 }
 
-int screen_init(void) {
+int screen_init(void)
+{
   i2c_init(I2C_PORT, 400000); // Use i2c port with baud rate of 400khz
   // Set pins for I2C operation
   gpio_set_function(I2C_PIN_SDA, GPIO_FUNC_I2C);
@@ -90,7 +94,8 @@ int screen_init(void) {
   return PICO_OK;
 }
 
-int peripheral_init(void) {
+int peripheral_init(void)
+{
   // TODO: add error handling
   button_init();
   screen_init();

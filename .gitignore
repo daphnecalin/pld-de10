@@ -1,6 +1,9 @@
 __pycache__/
 /demo_sem_one/tb/generated
 # Generated handoff files only
+/uP/src/test/sample_*.txt
+/uP/src/test/debug_packets.h
+/uP/src/test/expected_packets.json
 /uP/test/generated/*
 build/
 /uP/build/
@@ -8,3 +11,28 @@ build/
 /uP/build.sh
 /build/
 /.vscode/
+
+# Quartus generated
+/quartus/db/
+/quartus/incremental_db/
+/quartus/output_files/
+/quartus/simulation/
+/quartus/devkits/
+/quartus/*.qws
+/quartus/*.bak
+/quartus/*.rpt
+/quartus/*.summary
+/quartus/*.smsg
+/quartus/*.done
+/quartus/*_assignment_defaults.qdf
+/quartus/c5_pin_model_dump.txt
+
+# sigasi
+project.sigasi
+.sigasi/
+
+# cache
+.cache/
+
+# untracked docs
+docs/ignore-*

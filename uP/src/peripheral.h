@@ -10,8 +10,8 @@ constexpr int I2C_PIN_SCL = PICO_DEFAULT_I2C_SCL_PIN;
 
 constexpr int BUTTON_UP_PIN = 10;
 constexpr int BUTTON_DOWN_PIN = 9;
-constexpr int BUTTON_RIGHT_PIN = 6;
-constexpr int BUTTON_LEFT_PIN = 5;
+constexpr int BUTTON_RIGHT_PIN = 8;
+constexpr int BUTTON_LEFT_PIN = 7;
 
 enum button_id
 {
