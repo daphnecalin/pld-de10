@@ -150,7 +150,7 @@ module debug_tb;
         end
         if(command_status !== expected_status) begin
             $error("command status for id=%0d expected=%0d got=%0d",
-                   id, expected_status, command_status);
+                id, expected_status, command_status);
             errors++;
         end
     endtask
@@ -163,7 +163,6 @@ module debug_tb;
             default: return 8'd4;
         endcase
     endfunction
-
     function automatic logic [7:0] expected_value(input int id);
         case(id)
             0: return {7'b0,expected_snapshot[0]};
@@ -225,7 +224,7 @@ module debug_tb;
 
     task automatic check_effective_controls;
         if ({msc, msb, msa, input_data, cin, s_l} !==
-            {3'd5, 2'd1, 2'd2, 4'hA, 1'b1, 1'b1}) begin
+        {3'd5, 2'd1, 2'd2, 4'hA, 1'b1, 1'b1}) begin
             $error("effective inputs do not match written control values");
             errors++;
         end

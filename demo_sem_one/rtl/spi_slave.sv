@@ -208,7 +208,7 @@ module spi_slave (
                     if (cs_rise) begin
                         spi_miso <= 1'b0;
                         command_valid = (rx_byte_count == WRITE_BYTES) &&
-                                        (command_bytes[0] == WRITE_MARKER);
+                        (command_bytes[0] == WRITE_MARKER);
                         if ((rx_byte_count != 0) && (command_bytes[0] == WRITE_MARKER)) begin
                             command_done <= 1'b1;
                             if (!command_valid) begin

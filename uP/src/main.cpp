@@ -1,133 +1,269 @@
+// Created: 10/24/26
+// Updated: 11/27/26
+#include "hardware/i2c.h"
+#include "pico/binary_info.h"
+#include "pico/stdlib.h"
+#include <pico/time.h>
 #include <cstdio>
 #include <cstring>
 
-#include "pico/stdlib.h"
-#include "hardware/i2c.h"
-#include "pico/binary_info.h"
+#include "peripheral.h"
 #include "transfer.h"
-#include "packet.h"
+#include "core/packet.h"
+
+constexpr int DEBOUNCE_TIME_US = 40000;
+
 #include "ssd1306.h"
 #include "textRenderer/TextRenderer.h"
 
-namespace {
-    using pico_ssd1306::SSD1306;
-    using pico_ssd1306::font_5x8;
+// more docs: https://ssd1306.harbys.me/
 
-    packet::Packet latest_packet{};
-    bool have_packet = false;
-    transfer::CommandStatus latest_command_status = transfer::CommandStatus::None;
+/* *********************  Type Definitions  ************************/
 
-    uint8_t control_width(uint8_t id) {
-        switch (id) {
-            case 1:
-            case 2: return 1;
-            case 4: return 4;
-            case 5:
-            case 6: return 2;
-            case 7: return 3;
-            default: return 0;
-        }
-    }
+typedef enum state_t
+{
+  MENU,
+  ANALYZE,
+  SETTINGS
+} state_t;
 
-    uint32_t signal_value(uint8_t id) {
-        if (!have_packet) return 0;
-        for (uint8_t i = 0; i < latest_packet.signal_count; ++i) {
-            if (latest_packet.signals[i].id == id)
-                return latest_packet.signals[i].value;
-        }
-        return 0;
-    }
+enum menu_items
+{
+  MENU_ANALYZE,
+  MENU_SETTINGS,
+  MENUITEM_CT
+};
 
-    void draw_screen(SSD1306& display) {
-        char line[32];
-        display.clear();
-        pico_ssd1306::drawText(&display, font_5x8, "RALU DEBUG", 0, 0);
-        std::snprintf(line, sizeof(line), "IN:%X A:%X B:%X", signal_value(4), signal_value(5), signal_value(6));
-        pico_ssd1306::drawText(&display, font_5x8, line, 0, 9);
-        std::snprintf(line, sizeof(line), "SEL:%X CIN:%X", signal_value(7), signal_value(2));
-        pico_ssd1306::drawText(&display, font_5x8, line, 0, 18);
-        std::snprintf(line, sizeof(line), "OUT:%X COUT:%X", signal_value(10), signal_value(3));
-        pico_ssd1306::drawText(&display, font_5x8, line, 0, 27);
-        std::snprintf(line, sizeof(line), "REG A:%X B:%X", signal_value(8), signal_value(9));
-        pico_ssd1306::drawText(&display, font_5x8, line, 0, 36);
-        std::snprintf(line, sizeof(line), "CMD STATUS:%u", static_cast<unsigned>(latest_command_status));
-        pico_ssd1306::drawText(&display, font_5x8, line, 0, 45);
-        pico_ssd1306::drawText(&display, font_5x8, "USB: set ID VAL", 0, 54);
-        display.sendBuffer();
-    }
+/* *********************  Type Definitions  ************************/
 
-    void handle_console_line(char* line) {
-        unsigned id = 0;
-        unsigned value = 0;
-        if (std::sscanf(line, "set %u %x", &id, &value) == 2) {
-            const uint8_t width = control_width(static_cast<uint8_t>(id));
-            if (width == 0) {
-                std::printf("Writable IDs: 1, 2, 4, 5, 6, 7\n");
-                return;
-            }
-            latest_command_status = transfer::set_control(static_cast<uint8_t>(id), width, value);
-            const bool ok = latest_command_status == transfer::CommandStatus::Ok;
-            std::printf("set id=%u value=0x%X: %s (status %u)\n", id, value,
-                        ok ? "OK" : "FAILED", static_cast<unsigned>(latest_command_status));
-        } else if (std::sscanf(line, "clear %u", &id) == 1) {
-            const uint8_t width = control_width(static_cast<uint8_t>(id));
-            if (width == 0) {
-                std::printf("Writable IDs: 1, 2, 4, 5, 6, 7\n");
-                return;
-            }
-            latest_command_status = transfer::clear_control_override(static_cast<uint8_t>(id), width);
-            const bool ok = latest_command_status == transfer::CommandStatus::Ok;
-            std::printf("clear id=%u: %s\n", id, ok ? "OK" : "FAILED");
-        } else {
-            std::printf("Commands: set <id> <hex-value>, clear <id>\n");
-        }
-    }
+/* *********************  Global Variables  ************************/
+
+state_t state = MENU;
+
+namespace
+{
+  packet::Packet latest_packet{};
+  bool have_packet = false;
+  transfer::CommandStatus latest_command_status = transfer::CommandStatus::None;
+
+  char input_line[48]{};
+  size_t input_length = 0;
 }
 
-int main() {
-    stdio_init_all();
-    i2c_init(i2c_default, 400'000);
-    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
-    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
-    sleep_ms(250);
+/* *********************  Global Variables  ************************/
 
-    SSD1306 display(i2c_default, 0x3D, pico_ssd1306::Size::W128xH64);
-    transfer::spi_setup();
+/* *********************  Functions  ************************/
 
-    std::printf("RALU backpack ready\n");
-    std::printf("Commands: set <id> <hex-value>, clear <id>\n");
-    std::printf("Writable IDs: 1=S_L, 2=CIN, 4=Input, 5=MSA, 6=MSB, 7=MSC\n");
-
-    char input_line[48]{};
-    size_t input_length = 0;
-    draw_screen(display);
-
-    while (true) {
-        if (gpio_get(PLD_DATA_READY_PIN)) {
-            const packet::Frame frame = transfer::spi_receive();
-            const auto parsed = packet::Packet::parse(frame);
-            if (parsed) {
-                latest_packet = *parsed;
-                have_packet = true;
-                draw_screen(display);
-            } else {
-                std::printf("Received invalid telemetry frame\n");
-            }
-        }
-
-        const int ch = getchar_timeout_us(0);
-        if (ch == '\r' || ch == '\n') {
-            if (input_length != 0) {
-                input_line[input_length] = '\0';
-                handle_console_line(input_line);
-                input_length = 0;
-                draw_screen(display);
-            }
-        } else if (ch >= 0 && input_length < sizeof(input_line) - 1) {
-            input_line[input_length++] = static_cast<char>(ch);
-        }
-        tight_loop_contents();
+namespace
+{
+  uint8_t control_width(uint8_t id)
+  {
+    switch (id)
+    {
+    case 1:
+    case 2:
+      return 1;
+    case 4:
+      return 4;
+    case 5:
+    case 6:
+      return 2;
+    case 7:
+      return 3;
+    default:
+      return 0;
     }
+  }
+
+  uint32_t signal_value(uint8_t id)
+  {
+    if (!have_packet)
+      return 0;
+    for (uint8_t i = 0; i < latest_packet.signal_count; ++i)
+    {
+      if (latest_packet.signals[i].id == id)
+        return latest_packet.signals[i].value;
+    }
+    return 0;
+  }
+
+  // Draws the analyze view into the frame buffer. The main loop owns
+  // display.clear() / display.sendBuffer().
+  void draw_analyze_screen(pico_ssd1306::SSD1306 &display)
+  {
+    char line[32];
+    drawText(&display, font_5x8, "RALU DEBUG  <L:back", 0, 0);
+    std::snprintf(line, sizeof(line), "IN:%lX A:%lX B:%lX", (unsigned long)signal_value(4),
+                  (unsigned long)signal_value(5), (unsigned long)signal_value(6));
+    drawText(&display, font_5x8, line, 0, 9);
+    std::snprintf(line, sizeof(line), "SEL:%lX CIN:%lX", (unsigned long)signal_value(7),
+                  (unsigned long)signal_value(2));
+    drawText(&display, font_5x8, line, 0, 18);
+    std::snprintf(line, sizeof(line), "OUT:%lX COUT:%lX", (unsigned long)signal_value(10),
+                  (unsigned long)signal_value(3));
+    drawText(&display, font_5x8, line, 0, 27);
+    std::snprintf(line, sizeof(line), "REG A:%lX B:%lX", (unsigned long)signal_value(8),
+                  (unsigned long)signal_value(9));
+    drawText(&display, font_5x8, line, 0, 36);
+    std::snprintf(line, sizeof(line), "CMD STATUS:%u", static_cast<unsigned>(latest_command_status));
+    drawText(&display, font_5x8, line, 0, 45);
+    drawText(&display, font_5x8, "USB: set ID VAL", 0, 54);
+  }
+
+  void handle_console_line(char *line)
+  {
+    unsigned id = 0;
+    unsigned value = 0;
+    if (std::sscanf(line, "set %u %x", &id, &value) == 2)
+    {
+      const uint8_t width = control_width(static_cast<uint8_t>(id));
+      if (width == 0)
+      {
+        std::printf("Writable IDs: 1, 2, 4, 5, 6, 7\n");
+        return;
+      }
+      latest_command_status = transfer::set_control(static_cast<uint8_t>(id), width, value);
+      const bool ok = latest_command_status == transfer::CommandStatus::Ok;
+      std::printf("set id=%u value=0x%X: %s (status %u)\n", id, value,
+                  ok ? "OK" : "FAILED", static_cast<unsigned>(latest_command_status));
+    }
+    else if (std::sscanf(line, "clear %u", &id) == 1)
+    {
+      const uint8_t width = control_width(static_cast<uint8_t>(id));
+      if (width == 0)
+      {
+        std::printf("Writable IDs: 1, 2, 4, 5, 6, 7\n");
+        return;
+      }
+      latest_command_status = transfer::clear_control_override(static_cast<uint8_t>(id), width);
+      const bool ok = latest_command_status == transfer::CommandStatus::Ok;
+      std::printf("clear id=%u: %s\n", id, ok ? "OK" : "FAILED");
+    }
+    else
+    {
+      std::printf("Commands: set <id> <hex-value>, clear <id>\n");
+    }
+  }
+
+  // Poll the PLD for a new telemetry frame and store it if valid.
+  void poll_telemetry(void)
+  {
+    if (!gpio_get(PLD_DATA_READY_PIN))
+      return;
+
+    const packet::Frame frame = transfer::spi_receive();
+    const auto parsed = packet::Packet::parse(frame);
+    if (parsed)
+    {
+      latest_packet = *parsed;
+      have_packet = true;
+    }
+    else
+    {
+      std::printf("Received invalid telemetry frame\n");
+    }
+  }
+
+  // Non-blocking read of the USB console; dispatches complete lines.
+  void poll_console(void)
+  {
+    const int ch = getchar_timeout_us(0);
+    if (ch == '\r' || ch == '\n')
+    {
+      if (input_length != 0)
+      {
+        input_line[input_length] = '\0';
+        handle_console_line(input_line);
+        input_length = 0;
+      }
+    }
+    else if (ch >= 0 && input_length < sizeof(input_line) - 1)
+    {
+      input_line[input_length++] = static_cast<char>(ch);
+    }
+  }
 }
+
+/* *********************  Functions  ************************/
+
+/* *********************  Program Code  ************************/
+
+int main(void)
+{
+  peripheral_init();
+  transfer::spi_setup();
+
+  pico_ssd1306::SSD1306 display =
+      pico_ssd1306::SSD1306(I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
+
+  int cursor_pos = 0;
+  state_t next_state = ANALYZE;
+
+  while (true)
+  {
+    display.clear();
+
+    if (state == MENU)
+    {
+      if (button_pressed(BTN_DOWN))
+      {
+        cursor_pos = (cursor_pos + 1) % MENUITEM_CT;
+      }
+      if (button_pressed(BTN_UP))
+      {
+        cursor_pos = (cursor_pos - 1 + MENUITEM_CT) % MENUITEM_CT;
+      }
+
+      if (cursor_pos == MENU_ANALYZE)
+      {
+        next_state = ANALYZE;
+      }
+      else if (cursor_pos == MENU_SETTINGS)
+      {
+        next_state = SETTINGS;
+      }
+
+      if (button_pressed(BTN_RIGHT))
+      {
+        state = next_state;
+        if (state == ANALYZE)
+        {
+          std::printf("RALU backpack ready\n");
+          std::printf("Commands: set <id> <hex-value>, clear <id>\n");
+          std::printf("Writable IDs: 1=S_L, 2=CIN, 4=Input, 5=MSA, 6=MSB, 7=MSC\n");
+        }
+      }
+      else
+      {
+        drawText(&display, font_5x8, "Analyze\n", 10, 0);
+        drawText(&display, font_5x8, "Settings\n", 10, 10);
+
+        uint anchor_y = 10 * cursor_pos;
+        drawText(&display, font_5x8, ">", 0, anchor_y);
+      }
+    }
+    else if (state == ANALYZE)
+    {
+      poll_telemetry();
+      poll_console();
+      draw_analyze_screen(display);
+
+      if (button_pressed(BTN_LEFT))
+      {
+        state = MENU;
+      }
+    }
+    else if (state == SETTINGS)
+    {
+      drawText(&display, font_5x8, "I am the settings menu :)\n", 10, 0);
+      drawText(&display, font_5x8, "Press LEFT to go back\n", 10, 10);
+      if (button_pressed(BTN_LEFT))
+      {
+        state = MENU;
+      }
+    }
+    display.sendBuffer(); // Send buffer to device and show on screen
+  }
+}
+
+/* *********************  Program Code  ************************/

@@ -38,3 +38,6 @@ Anything in [] should be replaced with a value specific to your system.
 ```
     sh build.sh
 ```
+
+4) Picotool is helpful for flashing the board without manually copying files. Download picotool for your system:
+https://github.com/raspberrypi/pico-sdk-tools/releases
