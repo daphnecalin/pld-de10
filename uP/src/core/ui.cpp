@@ -107,6 +107,10 @@ uint8_t Menu::visible_rows() const {
     return visible_rows_;
 }
 
+uint8_t Menu::depth() const {
+    return depth_;
+}
+
 /* *********************  Redraw Tracking  ************************/
 
 bool Menu::dirty() const {

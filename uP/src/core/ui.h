@@ -68,6 +68,8 @@ public:
     uint8_t cursor() const;
     uint8_t scroll() const;
     uint8_t visible_rows() const;
+    // number of screens on the stack (1 = only the root)
+    uint8_t depth() const;
 
     /* redraw tracking */
     bool dirty() const;
