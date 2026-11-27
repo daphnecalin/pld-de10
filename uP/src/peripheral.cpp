@@ -2,19 +2,19 @@
 #include "hardware/i2c.h"
 #include "pico/binary_info.h"
 #include "pico/stdlib.h"
+#include "core/record.h"
+#include "transfer.h"
 
 #include "ssd1306.h"
 #include "textRenderer/TextRenderer.h"
 #include <pico/time.h>
 
-#define DEBOUNCE_MS 20
+static const uint btn_pins[hw::BTN_COUNT] = {hw::BTN_DOWN_PIN, hw::BTN_UP_PIN, hw::BTN_LEFT_PIN,
+                                             hw::BTN_RIGHT_PIN};
 
-static const uint button_pins[BTN_COUNT] = {BUTTON_DOWN_PIN, BUTTON_UP_PIN,
-                                            BUTTON_LEFT_PIN, BUTTON_RIGHT_PIN};
+static volatile bool pressed_flag[hw::BTN_COUNT];
 
-static volatile bool pressed_flag[BTN_COUNT];
-
-void drawText5x8(const char *text, pico_ssd1306::SSD1306 *display)
+void hw::drawText5x8(const char *text, pico_ssd1306::SSD1306 *display)
 {
   drawText(display, font_5x8, text, 0, 0);
 }
@@ -22,7 +22,7 @@ void drawText5x8(const char *text, pico_ssd1306::SSD1306 *display)
 static int64_t debounce_alarm(alarm_id_t id, void *user_data)
 {
   int btn_id = (int)(intptr_t)user_data;
-  uint pin = button_pins[btn_id];
+  uint pin = btn_pins[btn_id];
 
   if (!gpio_get(pin))
   {
@@ -34,12 +34,12 @@ static int64_t debounce_alarm(alarm_id_t id, void *user_data)
   return 0;
 }
 
-static void button_callback(uint gpio, uint32_t events)
+static void btn_callback(uint gpio, uint32_t events)
 {
-  // button index e.g. BUTTON_DOWN's id is 0
+  // btn index e.g. btn_DOWN's id is 0
   int id = -1;
-  for (int i = 0; i < BTN_COUNT; i++)
-    if (button_pins[i] == gpio)
+  for (int i = 0; i < hw::BTN_COUNT; i++)
+    if (btn_pins[i] == gpio)
       id = i;
   if (id < 0)
   {
@@ -48,28 +48,28 @@ static void button_callback(uint gpio, uint32_t events)
 
   // disable interrupts until the debounce period is over
   gpio_set_irq_enabled(gpio, GPIO_IRQ_EDGE_FALL, false);
-  // set an alarm that runs after debounce period, pass the button index
-  add_alarm_in_ms(DEBOUNCE_MS, debounce_alarm, (void *)(intptr_t)id, false);
+  // set an alarm that runs after debounce period, pass the btn index
+  add_alarm_in_ms(hw::DEBOUNCE_MS, debounce_alarm, (void *)(intptr_t)id, false);
 }
 
 // Set GPIO pins for button navigation
-int button_init(void)
+int hw::btn_init(void)
 {
-  uint32_t button_mask = (1 << BUTTON_DOWN_PIN) | (1 << BUTTON_UP_PIN) |
-                         (1 << BUTTON_LEFT_PIN) | (1 << BUTTON_RIGHT_PIN);
-  gpio_init_mask(button_mask);
-  gpio_set_dir_in_masked(button_mask);
+  uint32_t btn_mask = (1 << hw::BTN_DOWN_PIN) | (1 << hw::BTN_UP_PIN) |
+                      (1 << hw::BTN_LEFT_PIN) | (1 << hw::BTN_RIGHT_PIN);
+  gpio_init_mask(btn_mask);
+  gpio_set_dir_in_masked(btn_mask);
 
-  gpio_set_irq_enabled_with_callback(button_pins[0], GPIO_IRQ_EDGE_FALL, true,
-                                     &button_callback);
+  gpio_set_irq_enabled_with_callback(btn_pins[0], GPIO_IRQ_EDGE_FALL, true,
+                                     &btn_callback);
   for (int i = 1; i < BTN_COUNT; i++)
-    gpio_set_irq_enabled(button_pins[i], GPIO_IRQ_EDGE_FALL, true);
+    gpio_set_irq_enabled(btn_pins[i], GPIO_IRQ_EDGE_FALL, true);
 
   return PICO_OK;
 }
 
-// check if a button was pressed and return it to false once checked
-bool button_pressed(int id)
+// check if a btn was pressed and return it to false once checked
+bool hw::btn_pressed(int id)
 {
   if (id >= BTN_COUNT || id < 0)
   {
@@ -83,7 +83,7 @@ bool button_pressed(int id)
   return false;
 }
 
-int screen_init(void)
+int hw::screen_init(void)
 {
   i2c_init(I2C_PORT, 400000); // Use i2c port with baud rate of 400khz
   // Set pins for I2C operation
@@ -94,11 +94,37 @@ int screen_init(void)
   return PICO_OK;
 }
 
-int peripheral_init(void)
+int hw::peripheral_init(void)
 {
   // TODO: add error handling
-  button_init();
+  btn_init();
   screen_init();
   stdio_init_all();
+  return PICO_OK;
+}
+
+// Example: https://github.com/raspberrypi/pico-examples/blob/master/spi/spi_master_slave/spi_master/spi_master.c
+int hw::spi_setup(void)
+{
+  // set up spi module connected to de10
+  // set up gpio interrupt for rising edge to initiate transmission
+  spi_init(spi_default, 1000 * 1000);
+  gpio_set_function(PICO_DEFAULT_SPI_RX_PIN, GPIO_FUNC_SPI);
+  gpio_set_function(PICO_DEFAULT_SPI_SCK_PIN, GPIO_FUNC_SPI);
+  gpio_set_function(PICO_DEFAULT_SPI_TX_PIN, GPIO_FUNC_SPI);
+
+  // the chip select needs to be driven manually
+  // set high while idling
+  gpio_init(hw::SPI_PIN_CS);
+  gpio_set_dir(hw::SPI_PIN_CS, GPIO_OUT);
+  gpio_put(hw::SPI_PIN_CS, 1);
+
+  gpio_init(hw::DATA_READY_PIN);
+  gpio_set_input_enabled(hw::DATA_READY_PIN, true);
+  gpio_add_raw_irq_handler(hw::DATA_READY_PIN, transfer::data_ready);
+  gpio_set_irq_enabled(hw::DATA_READY_PIN, GPIO_IRQ_EDGE_RISE, true);
+
+  ringBufferInit(&transfer::ringbuf);
+
   return PICO_OK;
 }

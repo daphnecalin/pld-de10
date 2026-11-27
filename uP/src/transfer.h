@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/packet.h"
+#include "core/record.h"
 
 // Default Raspberry Pi Pico SPI0 wiring. Override these definitions in the
 // board project if the backpack PCB uses different GPIOs.
@@ -34,6 +35,8 @@
 
 namespace transfer
 {
+    inline RingBuffer ringbuf;
+
     enum class CommandStatus : uint8_t
     {
         None = 0,
@@ -50,4 +53,5 @@ namespace transfer
     CommandStatus spi_command(const packet::ControlCommand &command);
     CommandStatus set_control(uint8_t id, uint8_t width, uint32_t value);
     CommandStatus clear_control_override(uint8_t id, uint8_t width);
+    void data_ready(void);
 }

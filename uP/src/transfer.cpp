@@ -1,4 +1,8 @@
 #include "transfer.h"
+#include "peripheral.h"
+#include "core/record.h"
+#include <hardware/spi.h>
+#include <stdint.h>
 
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
@@ -11,6 +15,7 @@ namespace transfer
         constexpr uint32_t SPI_BAUD = 1'000'000;
         constexpr uint32_t COMMAND_TIMEOUT_MS = 100;
         uint8_t next_sequence = 0;
+        volatile bool data_ready_flag = false;
 
         void select_fpga()
         {
@@ -32,6 +37,12 @@ namespace transfer
                 (gpio_get(PLD_COMMAND_STATUS1_PIN) ? 2u : 0u) |
                 (gpio_get(PLD_COMMAND_STATUS2_PIN) ? 4u : 0u));
         }
+    }
+
+    void data_ready()
+    {
+        // change data ready flag
+        data_ready_flag = 1;
     }
 
     void spi_setup(void)
@@ -62,7 +73,7 @@ namespace transfer
 
     packet::Frame spi_receive(void)
     {
-        while (!gpio_get(PLD_DATA_READY_PIN))
+        while (!data_ready_flag)
             tight_loop_contents();
 
         packet::Frame tx{};
@@ -70,6 +81,8 @@ namespace transfer
         select_fpga();
         spi_write_read_blocking(spi0, tx.data(), rx.data(), rx.size());
         deselect_fpga();
+
+        ringBufferWrite(&transfer::ringbuf, {.t_us = time_us_64(), .frame = rx});
         return rx;
     }
 

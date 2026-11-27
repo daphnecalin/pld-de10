@@ -190,11 +190,10 @@ namespace
 
 int main(void)
 {
-  peripheral_init();
-  transfer::spi_setup();
+  hw::peripheral_init();
 
   pico_ssd1306::SSD1306 display =
-      pico_ssd1306::SSD1306(I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
+      pico_ssd1306::SSD1306(hw::I2C_PORT, 0x3C, pico_ssd1306::Size::W128xH64);
 
   int cursor_pos = 0;
   state_t next_state = ANALYZE;
@@ -205,11 +204,11 @@ int main(void)
 
     if (state == MENU)
     {
-      if (button_pressed(BTN_DOWN))
+      if (hw::btn_pressed((hw::BTN_DOWN)))
       {
         cursor_pos = (cursor_pos + 1) % MENUITEM_CT;
       }
-      if (button_pressed(BTN_UP))
+      if (hw::btn_pressed((hw::BTN_UP)))
       {
         cursor_pos = (cursor_pos - 1 + MENUITEM_CT) % MENUITEM_CT;
       }
@@ -223,7 +222,7 @@ int main(void)
         next_state = SETTINGS;
       }
 
-      if (button_pressed(BTN_RIGHT))
+      if (hw::btn_pressed((hw::BTN_RIGHT)))
       {
         state = next_state;
         if (state == ANALYZE)
@@ -248,7 +247,7 @@ int main(void)
       poll_console();
       draw_analyze_screen(display);
 
-      if (button_pressed(BTN_LEFT))
+      if (hw::btn_pressed((hw::BTN_LEFT)))
       {
         state = MENU;
       }
@@ -257,7 +256,7 @@ int main(void)
     {
       drawText(&display, font_5x8, "I am the settings menu :)\n", 10, 0);
       drawText(&display, font_5x8, "Press LEFT to go back\n", 10, 10);
-      if (button_pressed(BTN_LEFT))
+      if (hw::btn_pressed((hw::BTN_LEFT)))
       {
         state = MENU;
       }
