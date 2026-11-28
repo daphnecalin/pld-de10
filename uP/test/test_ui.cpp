@@ -1,7 +1,9 @@
 #include "doctest/doctest.h"
 
+#include <initializer_list>
 #include <iterator>
 #include <ostream>
+#include <string>
 
 #include "custom_screen.h"
 #include "menus.h"
@@ -180,210 +182,404 @@ struct Fixture {
 /* *********************  Settings  ************************/
 
 TEST_CASE("settings start at defaults") {
-    // setup: a fresh Settings
     Settings s;
-    // check: for every SettingId, get() == SETTING_DEFS[id].default_index
+    // check every id is at default
     for(int i = 0; i < SETTING_COUNT; i++) {
         CHECK(s.get(static_cast<SettingId>(i)) == SETTING_DEFS[i].default_index);
     }
 }
 
 TEST_CASE("settings cycle wraps to first choice") {
-    // setup: a fresh Settings, pick a setting and its choice_count from SETTING_DEFS
     Settings s;
-    // act:   cycle() choice_count times, checking get() advances by 1 each time
+    // cycle options + 1 times and check the value is right
     for(int i = 0; i < SETTING_COUNT; i++) {
         uint8_t def = SETTING_DEFS[i].default_index;
         uint8_t lim = SETTING_DEFS[i].choice_count;
+        SettingId id = static_cast<SettingId>(i);
         for(int j = 0; j < lim + 1; j++) {
-            CHECK(s.get(static_cast<SettingId>(i)) == (def + j) % lim);
-            s.cycle(static_cast<SettingId>(i));
+            CHECK(s.get(id) == (def + j) % lim);
+            s.cycle(id);
         }
     }
 }
 
 TEST_CASE("settings value_text matches current choice") {
-    // setup: a fresh Settings
-    // check: value_text(id) == SETTING_DEFS[id].choices[get(id)]
-    // act:   cycle(id)
-    // check: same comparison still holds with the new index
-    // note:  compare C strings with std::string(a) == b, or CHECK(doctest::String(a) == b)
+    Settings s;
+    // check value_text against setting_defs
+    for(int i = 0; i < SETTING_COUNT; i++) {
+        uint8_t lim = SETTING_DEFS[i].choice_count;
+        SettingId id = static_cast<SettingId>(i);
+        for(int j = 0; j < lim; j++) {
+            CHECK(std::string(s.value_text(id)) ==
+                  std::string(SETTING_DEFS[i].choices[s.get(id)]));
+            s.cycle(id);
+        }
+    }
 }
 
 TEST_CASE("settings reset_defaults restores every setting") {
-    // setup: a fresh Settings, cycle every setting once so none are at default
-    // act:   reset_defaults()
-    // check: every setting is back to its default_index
+    Settings s;
+    // cycle every setting once
+    for(int i = 0; i < SETTING_COUNT; i++) {
+        s.cycle(static_cast<SettingId>(i));
+    }
+
+    s.reset_defaults();
+    // then check that they're all defaults
+    for(int i = 0; i < SETTING_COUNT; i++) {
+        CHECK(s.get(static_cast<SettingId>(i)) == SETTING_DEFS[i].default_index);
+    }
 }
 
 /* *********************  Tables  ************************/
 
 TEST_CASE("real SCREENS: list screens have items, custom screens don't") {
-    // loop over app::SCREENS[0 .. app::SCREEN_COUNT)
-    // check: List   -> items != nullptr and item_count > 0
-    // check: Custom -> items == nullptr and item_count == 0
-    // (order vs ScreenIds is already checked by static_assert in menus.cpp)
+    // order is already checked by static_assert in menus.cpp, so just check shape
+    for(int i = 0; i < app::SCREEN_COUNT; i++) {
+        const Screen& s = app::SCREENS[i];
+        CAPTURE(i);
+        if(s.kind == ScreenKind::List) {
+            CHECK(s.items != nullptr);
+            CHECK(s.item_count > 0);
+        } else {
+            CHECK(s.items == nullptr);
+            CHECK(s.item_count == 0);
+        }
+    }
 }
 
 /* *********************  Cursor  ************************/
 
 TEST_CASE_FIXTURE(Fixture, "starts on root with cursor 0") {
-    // check: current_screen() == FAKE_ROOT, cursor() == 0, scroll() == 0, depth() == 1
-    // check: title() and item_count() match the FAKE_ROOT entry
+    CHECK(menu.current_screen() == FAKE_ROOT);
+    CHECK(menu.cursor() == 0);
+    CHECK(menu.scroll() == 0);
+    CHECK(depth() == 1);
+    // render queries should match the root's table entry
+    CHECK(std::string(menu.title()) == "Root");
+    CHECK(menu.item_count() == ROOT_ITEM_COUNT);
 }
 
 TEST_CASE_FIXTURE(Fixture, "down/up move the cursor") {
-    // act:   press(Input::Down) -> check cursor() == 1
-    // act:   press(Input::Down) -> check cursor() == 2
-    // act:   press(Input::Up)   -> check cursor() == 1
+    press(Input::Down);
+    CHECK(menu.cursor() == 1);
+    press(Input::Down);
+    CHECK(menu.cursor() == 2);
+    press(Input::Up);
+    CHECK(menu.cursor() == 1);
 }
 
 TEST_CASE_FIXTURE(Fixture, "cursor wraps at both ends") {
-    // act:   press(Input::Up) from cursor 0
-    // check: cursor() == ROOT_ITEM_COUNT - 1
-    // act:   press(Input::Down)
-    // check: cursor() == 0
+    // up from the top wraps to the bottom
+    press(Input::Up);
+    CHECK(menu.cursor() == ROOT_ITEM_COUNT - 1);
+    // down from the bottom wraps to the top
+    press(Input::Down);
+    CHECK(menu.cursor() == 0);
 }
 
 TEST_CASE_FIXTURE(Fixture, "up/down/select do nothing on an empty screen") {
-    // setup: select_root_item(ITEM_EMPTY), check current_screen() == FAKE_EMPTY
-    // act:   press Up, Down, Select
-    // check: still on FAKE_EMPTY, cursor() == 0, every event == Event{}
+    select_root_item(ITEM_EMPTY);
+    REQUIRE(menu.current_screen() == FAKE_EMPTY);
+    // none of these should move anything or produce an event
+    for(Input in : {Input::Up, Input::Down, Input::Select}) {
+        CAPTURE(in);
+        CHECK(press(in) == Event{});
+        CHECK(menu.current_screen() == FAKE_EMPTY);
+        CHECK(menu.cursor() == 0);
+    }
 }
 
 /* *********************  Scroll  ************************/
 
 TEST_CASE_FIXTURE(Fixture, "moving past visible_rows advances scroll") {
-    // setup: select_root_item(ITEM_LONG)
-    // act:   press(Input::Down, VISIBLE_ROWS - 1) -> check scroll() == 0 (cursor on last visible row)
-    // act:   press(Input::Down)                   -> check scroll() == 1
-    // check: cursor is always inside [scroll(), scroll() + VISIBLE_ROWS)
+    select_root_item(ITEM_LONG);
+    REQUIRE(menu.current_screen() == FAKE_LONG);
+
+    // cursor on the last visible row, no scroll yet
+    press(Input::Down, VISIBLE_ROWS - 1);
+    CHECK(menu.cursor() == VISIBLE_ROWS - 1);
+    CHECK(menu.scroll() == 0);
+
+    // one more moves past the window
+    press(Input::Down);
+    CHECK(menu.cursor() == VISIBLE_ROWS);
+    CHECK(menu.scroll() == 1);
+
+    // cursor stays inside the window the rest of the way down
+    for(int i = VISIBLE_ROWS + 1; i < LONG_COUNT; i++) {
+        press(Input::Down);
+        CHECK(menu.cursor() >= menu.scroll());
+        CHECK(menu.cursor() < menu.scroll() + VISIBLE_ROWS);
+    }
+
+    // moving up inside the window doesn't scroll
+    uint8_t scroll = menu.scroll();
+    press(Input::Up);
+    CHECK(menu.scroll() == scroll);
+
+    // moving up past the top of the window scrolls up with the cursor
+    press(Input::Up, VISIBLE_ROWS - 1);
+    CHECK(menu.scroll() == menu.cursor());
 }
 
 TEST_CASE_FIXTURE(Fixture, "wrapping to the top resets scroll") {
-    // setup: select_root_item(ITEM_LONG)
-    // act:   press(Input::Up) to wrap to the bottom
-    // check: cursor() == LONG_COUNT - 1, scroll() == LONG_COUNT - VISIBLE_ROWS
-    // act:   press(Input::Down) to wrap to the top
-    // check: cursor() == 0, scroll() == 0
+    select_root_item(ITEM_LONG);
+    REQUIRE(menu.current_screen() == FAKE_LONG);
+
+    // wrap to the bottom, last item should be the last visible row
+    press(Input::Up);
+    CHECK(menu.cursor() == LONG_COUNT - 1);
+    CHECK(menu.scroll() == LONG_COUNT - VISIBLE_ROWS);
+
+    // wrap back to the top
+    press(Input::Down);
+    CHECK(menu.cursor() == 0);
+    CHECK(menu.scroll() == 0);
 }
 
 /* *********************  Stack  ************************/
 
 TEST_CASE_FIXTURE(Fixture, "selecting a submenu pushes it with cursor 0") {
-    // setup: select_root_item(ITEM_LONG)
-    // check: current_screen() == FAKE_LONG, depth() == 2, cursor() == 0, scroll() == 0
-    // check: the Select event == Event{} (submenus don't produce events)
+    // submenus don't produce events
+    CHECK(select_root_item(ITEM_LONG) == Event{});
+    CHECK(menu.current_screen() == FAKE_LONG);
+    CHECK(depth() == 2);
+    CHECK(menu.cursor() == 0);
+    CHECK(menu.scroll() == 0);
+
+    // leave it scrolled, then re-enter: should be a fresh frame
+    press(Input::Up);
+    press(Input::Back);
+    press(Input::Select);
+    REQUIRE(menu.current_screen() == FAKE_LONG);
+    CHECK(menu.cursor() == 0);
+    CHECK(menu.scroll() == 0);
 }
 
+// ITEM_CUSTOM has to be far enough down that the root scrolls to reach it,
+// otherwise the scroll restore check below is meaningless
+static_assert(ITEM_CUSTOM >= VISIBLE_ROWS);
+
 TEST_CASE_FIXTURE(Fixture, "back pops and restores cursor and scroll") {
-    // setup: select_root_item(ITEM_LONG), then press Down enough to scroll
-    //        (remember the root cursor = ITEM_LONG)
-    // act:   press(Input::Back)
-    // check: current_screen() == FAKE_ROOT, depth() == 1, cursor() == ITEM_LONG
-    // optional: re-enter FAKE_LONG and check it starts fresh at cursor 0 (new frame)
+    select_root_item(ITEM_CUSTOM);
+    REQUIRE(menu.current_screen() == FAKE_CUSTOM);
+
+    // root frame should come back exactly as it was left
+    press(Input::Back);
+    CHECK(menu.current_screen() == FAKE_ROOT);
+    CHECK(depth() == 1);
+    CHECK(menu.cursor() == ITEM_CUSTOM);
+    CHECK(menu.scroll() == ITEM_CUSTOM - VISIBLE_ROWS + 1);
 }
 
 TEST_CASE_FIXTURE(Fixture, "back on root does nothing") {
-    // setup: move the cursor somewhere non-zero, menu.clear_dirty()
-    // act:   press(Input::Back)
-    // check: still FAKE_ROOT, depth() == 1, cursor unchanged, dirty() == false
+    press(Input::Down, 2);
+    menu.clear_dirty();
+
+    CHECK(press(Input::Back) == Event{});
+    CHECK(menu.current_screen() == FAKE_ROOT);
+    CHECK(depth() == 1);
+    CHECK(menu.cursor() == 2);
+    CHECK_FALSE(menu.dirty());
 }
 
 TEST_CASE_FIXTURE(Fixture, "push beyond MAX_DEPTH is ignored") {
-    // setup: select_root_item(ITEM_DEEP) -> depth() == 2
-    // act:   press(Input::Select, n) with n large enough to exceed Menu::MAX_DEPTH
-    // check: depth() == Menu::MAX_DEPTH, still on FAKE_DEEP
-    // act:   press(Input::Back, Menu::MAX_DEPTH - 1)
-    // check: back on FAKE_ROOT with depth() == 1
+    select_root_item(ITEM_DEEP);
+    REQUIRE(depth() == 2);
+
+    // FAKE_DEEP links to itself, so keep selecting past the limit
+    press(Input::Select, Menu::MAX_DEPTH + 2);
+    CHECK(depth() == Menu::MAX_DEPTH);
+    CHECK(menu.current_screen() == FAKE_DEEP);
+
+    // popping MAX_DEPTH - 1 times should land back on root
+    press(Input::Back, Menu::MAX_DEPTH - 1);
+    CHECK(menu.current_screen() == FAKE_ROOT);
+    CHECK(depth() == 1);
 }
 
 /* *********************  Items  ************************/
 
 TEST_CASE_FIXTURE(Fixture, "action item returns Action event without changing state") {
-    // act:   ev = select_root_item(ITEM_ACT)
-    // check: ev == Event{EventType::Action, FAKE_ACTION_A}
-    // check: still FAKE_ROOT, depth() == 1, cursor() == ITEM_ACT
+    Event ev = select_root_item(ITEM_ACT);
+    CHECK(ev == Event{EventType::Action, FAKE_ACTION_A});
+    // menu itself shouldn't move
+    CHECK(menu.current_screen() == FAKE_ROOT);
+    CHECK(depth() == 1);
+    CHECK(menu.cursor() == ITEM_ACT);
 }
 
 TEST_CASE_FIXTURE(Fixture, "setting item cycles value and returns SettingChanged") {
-    // setup: remember settings.get(SETTING_TRIGGER_EDGE)
-    // act:   ev = select_root_item(ITEM_TRIG)
-    // check: ev == Event{EventType::SettingChanged, SETTING_TRIGGER_EDGE}
-    // check: settings.get() advanced by 1
-    // check: menu.item_value(ITEM_TRIG) == settings.value_text(SETTING_TRIGGER_EDGE)
+    uint8_t before = settings.get(SETTING_TRIGGER_EDGE);
+    uint8_t count = SETTING_DEFS[SETTING_TRIGGER_EDGE].choice_count;
+
+    Event ev = select_root_item(ITEM_TRIG);
+    CHECK(ev == Event{EventType::SettingChanged, SETTING_TRIGGER_EDGE});
+    CHECK(settings.get(SETTING_TRIGGER_EDGE) == (before + 1) % count);
+
+    // menu should show the new value
+    REQUIRE(menu.item_value(ITEM_TRIG) != nullptr);
+    CHECK(std::string(menu.item_value(ITEM_TRIG)) ==
+          std::string(settings.value_text(SETTING_TRIGGER_EDGE)));
 }
 
 TEST_CASE_FIXTURE(Fixture, "item_value is nullptr for non-setting items") {
-    // check: item_value(i) == nullptr for ITEM_LONG / ITEM_ACT (submenu, action)
-    // check: item_value(ITEM_TRIG) != nullptr
-    // check: item_value(ROOT_ITEM_COUNT) == nullptr (out of range)
+    CHECK(menu.item_value(ITEM_LONG) == nullptr); // submenu
+    CHECK(menu.item_value(ITEM_ACT) == nullptr);  // action
+    CHECK(menu.item_value(ITEM_TRIG) != nullptr); // setting
+    // out of range
+    CHECK(menu.item_value(ROOT_ITEM_COUNT) == nullptr);
+}
+
+TEST_CASE_FIXTURE(Fixture, "item_label is empty out of range") {
+    CHECK(std::string(menu.item_label(ITEM_LONG)) == "Long");
+    CHECK(std::string(menu.item_label(ROOT_ITEM_COUNT)) == "");
 }
 
 /* *********************  Aliases  ************************/
 
 TEST_CASE_FIXTURE(Fixture, "Right acts as Select on list screens") {
-    // setup: cursor on ITEM_LONG (cursor 0, so no setup needed)
-    // act:   press(Input::Right)
-    // check: current_screen() == FAKE_LONG
+    // cursor already starts on ITEM_LONG
+    REQUIRE(menu.cursor() == ITEM_LONG);
+    press(Input::Right);
+    CHECK(menu.current_screen() == FAKE_LONG);
 }
 
 TEST_CASE_FIXTURE(Fixture, "Left acts as Back on list screens") {
-    // setup: select_root_item(ITEM_LONG)
-    // act:   press(Input::Left)
-    // check: current_screen() == FAKE_ROOT
+    select_root_item(ITEM_LONG);
+    REQUIRE(menu.current_screen() == FAKE_LONG);
+    press(Input::Left);
+    CHECK(menu.current_screen() == FAKE_ROOT);
 }
 
 /* *********************  Custom Screens  ************************/
 
 TEST_CASE_FIXTURE(Fixture, "entering a custom screen calls on_enter once") {
-    // act:   select_root_item(ITEM_CUSTOM)
-    // check: current_screen() == FAKE_CUSTOM, current_kind() == ScreenKind::Custom
-    // check: custom.enters == 1, custom.exits == 0
+    select_root_item(ITEM_CUSTOM);
+    CHECK(menu.current_screen() == FAKE_CUSTOM);
+    CHECK(menu.current_kind() == ScreenKind::Custom);
+    CHECK(custom.enters == 1);
+    CHECK(custom.exits == 0);
 }
 
 TEST_CASE_FIXTURE(Fixture, "custom screen sees input before Menu") {
-    // setup: select_root_item(ITEM_CUSTOM)
-    // act:   press Up, Down, Right (custom.consume == false)
-    // check: custom.inputs == 3, custom.last == Input::Right
-    // check: still on FAKE_CUSTOM (unconsumed non-back inputs are ignored)
+    select_root_item(ITEM_CUSTOM);
+    REQUIRE(menu.current_screen() == FAKE_CUSTOM);
+    // navigating the root shouldn't have reached the handler
+    CHECK(custom.inputs == 0);
+
+    press(Input::Up);
+    press(Input::Down);
+    press(Input::Right);
+    CHECK(custom.inputs == 3);
+    CHECK(custom.last == Input::Right);
+    // unconsumed non-back inputs are ignored, so still on the custom screen
+    CHECK(menu.current_screen() == FAKE_CUSTOM);
 }
 
 TEST_CASE_FIXTURE(Fixture, "consumed Left/Back does not pop a custom screen") {
-    // setup: select_root_item(ITEM_CUSTOM), custom.consume = true, menu.clear_dirty()
-    // act:   press(Input::Left), press(Input::Back)
-    // check: still FAKE_CUSTOM, depth() == 2, custom.exits == 0
-    // check: dirty() == true (consumed input means the custom view changed)
+    select_root_item(ITEM_CUSTOM);
+    REQUIRE(menu.current_screen() == FAKE_CUSTOM);
+    custom.consume = true;
+    menu.clear_dirty();
+
+    press(Input::Left);
+    press(Input::Back);
+    CHECK(menu.current_screen() == FAKE_CUSTOM);
+    CHECK(depth() == 2);
+    CHECK(custom.exits == 0);
+    // consumed input means the custom view changed, so redraw
+    CHECK(menu.dirty());
 }
 
 TEST_CASE_FIXTURE(Fixture, "unconsumed Left/Back pops a custom screen and calls on_exit") {
-    // use SUBCASE("Left") and SUBCASE("Back") so both inputs get tested
-    // setup: select_root_item(ITEM_CUSTOM), custom.consume = false
-    // act:   press the input
-    // check: current_screen() == FAKE_ROOT, depth() == 1
-    // check: custom.exits == 1, custom.inputs == 1 (handler still saw it first)
+    // test runs once per subcase, each picks the input to press
+    Input in = Input::Back;
+    SUBCASE("Left") { in = Input::Left; }
+    SUBCASE("Back") { in = Input::Back; }
+    CAPTURE(in);
+
+    select_root_item(ITEM_CUSTOM);
+    REQUIRE(menu.current_screen() == FAKE_CUSTOM);
+
+    press(in);
+    CHECK(menu.current_screen() == FAKE_ROOT);
+    CHECK(depth() == 1);
+    CHECK(custom.exits == 1);
+    // handler still got the input first
+    CHECK(custom.inputs == 1);
 }
 
 /* *********************  Dirty Flag  ************************/
 
 TEST_CASE_FIXTURE(Fixture, "dirty is set at startup") {
-    // check: dirty() == true before anything else
-    // act:   clear_dirty() -> check dirty() == false
+    CHECK(menu.dirty());
+    menu.clear_dirty();
+    CHECK_FALSE(menu.dirty());
 }
 
 TEST_CASE_FIXTURE(Fixture, "state-changing input sets dirty") {
-    // for each of: Down (cursor move), Select on a submenu (push), Back (pop),
-    //              Select on ITEM_TRIG (setting change)
-    // setup: menu.clear_dirty()
-    // act:   the input
-    // check: dirty() == true
-    // (SUBCASEs work well here, one per input)
+    // each subcase gets to the right spot, clears dirty, then does one thing
+    SUBCASE("cursor move") {
+        menu.clear_dirty();
+        press(Input::Down);
+    }
+    SUBCASE("push") {
+        menu.clear_dirty();
+        press(Input::Select); // cursor starts on ITEM_LONG
+    }
+    SUBCASE("pop") {
+        select_root_item(ITEM_LONG);
+        menu.clear_dirty();
+        press(Input::Back);
+    }
+    SUBCASE("setting change") {
+        press(Input::Down, ITEM_TRIG);
+        menu.clear_dirty();
+        press(Input::Select);
+    }
+    CHECK(menu.dirty());
 }
 
 TEST_CASE_FIXTURE(Fixture, "no-op input does not set dirty") {
-    // for each of: Back on root, Up/Down on FAKE_EMPTY, Up/Down/Right on FAKE_CUSTOM
-    //              (unconsumed), Select at full depth on FAKE_DEEP
-    // setup: navigate there, then menu.clear_dirty()
-    // act:   the input
-    // check: dirty() == false
+    // each subcase gets to the right spot, clears dirty, then does nothing useful
+    SUBCASE("back on root") {
+        menu.clear_dirty();
+        press(Input::Back);
+    }
+    SUBCASE("up/down on an empty screen") {
+        select_root_item(ITEM_EMPTY);
+        menu.clear_dirty();
+        press(Input::Up);
+        press(Input::Down);
+    }
+    SUBCASE("up/down on a single-item screen") {
+        // FAKE_DEEP has one item, wrapping lands on the same spot
+        select_root_item(ITEM_DEEP);
+        menu.clear_dirty();
+        press(Input::Up);
+        press(Input::Down);
+    }
+    SUBCASE("unconsumed input on a custom screen") {
+        select_root_item(ITEM_CUSTOM);
+        menu.clear_dirty();
+        press(Input::Up);
+        press(Input::Down);
+        press(Input::Right);
+    }
+    SUBCASE("select at full depth") {
+        select_root_item(ITEM_DEEP);
+        press(Input::Select, Menu::MAX_DEPTH);
+        REQUIRE(depth() == Menu::MAX_DEPTH);
+        menu.clear_dirty();
+        press(Input::Select);
+    }
+    SUBCASE("action item") {
+        // actions are handled by main.cpp, the menu itself doesn't change
+        press(Input::Down, ITEM_ACT);
+        menu.clear_dirty();
+        press(Input::Select);
+    }
+    CHECK_FALSE(menu.dirty());
 }
